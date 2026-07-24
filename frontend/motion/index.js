@@ -2,8 +2,28 @@ import { gsap } from "/vendor/gsap/index.js";
 
 export { gsap };
 
-function immediate(target, vars) {
-  if (target instanceof Element) Object.assign(target.style, vars);
+function immediate(target, vars = {}) {
+  const { autoAlpha, onComplete, x, y, z, xPercent, yPercent, scale, rotation, rotationX, ...styleVars } = vars;
+  if (target instanceof Element) {
+    if (autoAlpha !== undefined) {
+      target.style.opacity = String(autoAlpha);
+      target.style.visibility = Number(autoAlpha) === 0 ? "hidden" : "inherit";
+    }
+    const transforms = [];
+    if (xPercent !== undefined) transforms.push(`translateX(${xPercent}%)`);
+    if (yPercent !== undefined) transforms.push(`translateY(${yPercent}%)`);
+    if (x !== undefined) transforms.push(`translateX(${x}px)`);
+    if (y !== undefined) transforms.push(`translateY(${y}px)`);
+    if (z !== undefined) transforms.push(`translateZ(${z}px)`);
+    if (rotation !== undefined) transforms.push(`rotate(${rotation}deg)`);
+    if (rotationX !== undefined) transforms.push(`rotateX(${rotationX}deg)`);
+    if (scale !== undefined) transforms.push(`scale(${scale})`);
+    if (transforms.length) target.style.transform = transforms.join(" ");
+    for (const [name, value] of Object.entries(styleVars)) {
+      if (!["duration", "ease", "overwrite", "stagger"].includes(name)) target.style.setProperty(name, String(value));
+    }
+  }
+  if (typeof onComplete === "function") queueMicrotask(onComplete);
   return { kill() {} };
 }
 
@@ -14,6 +34,8 @@ export function createMotionScope(root) {
       exit: immediate,
       stagger: immediate,
       status: immediate,
+      set: immediate,
+      to: immediate,
       revert() {},
     };
   }
@@ -49,6 +71,12 @@ export function createMotionScope(root) {
     },
     status(target, vars = {}) {
       return track(() => engine.to(target, { "--status-pulse": 1, duration: 0.18, ease: "power1.out", ...vars }), target, {});
+    },
+    set(target, vars = {}) {
+      return reduceMotion ? immediate(target, vars) : engine.set(target, vars);
+    },
+    to(target, vars = {}) {
+      return track(() => engine.to(target, vars), target, vars);
     },
     revert() {
       for (const animation of animations) animation.kill();

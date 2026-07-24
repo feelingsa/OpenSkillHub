@@ -5,7 +5,10 @@ import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { loadConfig, type HubConfig } from "./config.js";
 import { OpenCodeProvider } from "./providers/opencode/provider.js";
+import { ArtifactService } from "./artifacts/service.js";
+import { PageGenerator } from "./page-generator/service.js";
 import { registerApiRoutes } from "./routes/api.js";
+import { RunService } from "./runs/service.js";
 import { SkillScanner } from "./skills/scanner.js";
 import { HubDatabase } from "./storage/database.js";
 
@@ -21,7 +24,20 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
   const database = new HubDatabase(config.databasePath);
   const provider = new OpenCodeProvider(config.opencode, app.log);
   const scanner = new SkillScanner(config, provider, database);
+  const artifacts = new ArtifactService(config, database);
+  const runs = new RunService(config, database, provider, artifacts);
+  const pages = new PageGenerator(config, database, provider);
   let scheduledSync: NodeJS.Timeout | undefined;
+
+  const syncSkillsAndQueuePages = async () => {
+    await scanner.sync();
+    if (provider.getHealthSnapshot().status !== "healthy") return;
+    for (const skill of database.listSkills()) {
+      if (skill.enabled && (skill.pageStatus === "missing" || skill.pageStatus === "stale")) {
+        await pages.generate(skill, undefined, { resume: false });
+      }
+    }
+  };
 
   app.addHook("onSend", async (_request, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
@@ -51,17 +67,19 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     wildcard: false,
     decorateReply: false,
   });
-  await registerApiRoutes(app, { config, database, provider, scanner });
+  await registerApiRoutes(app, { config, database, provider, scanner, runs, artifacts, pages });
 
   for (const route of ["/login", "/runs", "/skills/:skillId", "/runs/:runId", "/admin", "/admin/*"]) {
     app.get(route, async (_request, reply) => reply.sendFile("index.html"));
   }
 
   app.addHook("onReady", async () => {
-    void provider.start();
-    void scanner.sync().catch((error) => app.log.warn({ error }, "Initial Skill scan failed"));
+    pages.recoverInterrupted();
+    void provider.start()
+      .then(syncSkillsAndQueuePages)
+      .catch((error) => app.log.warn({ error }, "Initial Skill scan or page generation queue failed"));
     scheduledSync = setInterval(() => {
-      void scanner.sync().catch((error) => app.log.warn({ error }, "Scheduled Skill scan failed"));
+      void syncSkillsAndQueuePages().catch((error) => app.log.warn({ error }, "Scheduled Skill scan or page generation queue failed"));
     }, config.skillSyncIntervalMs);
   });
   app.addHook("onClose", async () => {

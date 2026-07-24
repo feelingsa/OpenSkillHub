@@ -29,6 +29,7 @@ describe("SkillScanner", () => {
       port: 0,
       databasePath: path.join(testDirectory, "hub.db"),
       skillSyncIntervalMs: 60000,
+      runTimeoutMs: 60000,
       logLevel: "fatal",
       opencode: {
         mode: "connect",
@@ -36,6 +37,8 @@ describe("SkillScanner", () => {
         command: "opencode",
         args: [],
         workingDirectory: testDirectory,
+        configDirectory: path.join(testDirectory, "opencode-config"),
+        dataDirectory: path.join(testDirectory, "opencode-data"),
         lockFilePath: path.join(testDirectory, "opencode.lock"),
         logFilePath: path.join(testDirectory, "opencode.log"),
         startTimeoutMs: 1000,

@@ -6,6 +6,8 @@
 | --- | --- | --- |
 | `legacy-home-desktop-1440x900.png` | `1440 x 900` | 深色网格背景、标题和 16 层归档卡片堆叠；由 6 个示例 Skill 循环展示。 |
 | `legacy-home-mobile-390x844.png` | `390 x 844` | 现有移动端缩放布局及可见卡片层级。 |
+| `home-current-desktop-1440x900.png` | `1440 x 900` | M2 当前 Node 用户端目录截图；以真实扫描的 Skill 数据呈现卡片堆叠、目录筛选和服务状态。 |
+| `home-current-desktop-1440x900.json` | `1440 x 900` | 对应截图的 URL、卡片数、焦点卡片数和溢出检查指标。 |
 
 ## 已确认交互合同
 

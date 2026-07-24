@@ -7,6 +7,5 @@ coverage/
 !.env.example
 data/*.db
 data/*.db-*
-runtime/artifacts/
-runtime/logs/
+runtime/
 frontend/generated/.cache/

@@ -63,3 +63,81 @@ export interface ProviderHealth {
   checkedAt: string;
   message?: string;
 }
+
+export type RunStatus = "created" | "running" | "waiting_question" | "waiting_permission" | "completed" | "failed" | "aborted";
+
+export type RunInputValues = Record<string, string | number | boolean>;
+
+export type RunEvent =
+  | { type: "run.created" }
+  | { type: "run.started" }
+  | { type: "message.delta"; text: string }
+  | { type: "tool.started"; tool: string }
+  | { type: "tool.finished"; tool: string }
+  | { type: "question.pending"; questionId: string; question: string }
+  | { type: "permission.pending"; permissionId: string; permission: string }
+  | { type: "artifact.created"; artifactId: string }
+  | { type: "run.completed" }
+  | { type: "run.failed"; message: string }
+  | { type: "run.aborted" };
+
+export type StoredRunEvent = RunEvent & {
+  runId: string;
+  sequence: number;
+  createdAt: string;
+};
+
+export interface RunRecord {
+  id: string;
+  skillId: string;
+  provider: ProviderId;
+  ownerId: string;
+  status: RunStatus;
+  inputValues: RunInputValues;
+  workspaceId: string;
+  sessionId?: string;
+  summary?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface ArtifactRecord {
+  id: string;
+  runId: string;
+  ownerId: string;
+  relativePath: string;
+  displayName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
+export type GeneratedPagePreset = "form-first" | "workflow-console" | "artifact-workbench";
+export type GeneratedPageStatus = "queued" | "generating" | "ready" | "failed";
+
+export interface GeneratedPageRecord {
+  id: string;
+  skillId: string;
+  version: string;
+  preset: GeneratedPagePreset;
+  sourceHash: string;
+  promptVersion: string;
+  status: GeneratedPageStatus;
+  outputDirectory?: string;
+  sessionId?: string;
+  viewManifest?: {
+    contractVersion: 1;
+    preset: GeneratedPagePreset;
+    sourceHash: string;
+    inputIds: string[];
+    runtime: "shared";
+  };
+  errorMessage?: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  activatedAt?: string;
+}

@@ -11,11 +11,12 @@ const envSchema = z.object({
   OPENCODE_MODE: z.enum(["connect", "managed"]).default("connect"),
   OPENCODE_URL: z.string().url().default("http://127.0.0.1:4096"),
   OPENCODE_COMMAND: z.string().min(1).default("opencode"),
-  OPENCODE_ARGS_JSON: z.string().default('["serve","--hostname","127.0.0.1","--port","4096"]'),
+  OPENCODE_ARGS_JSON: z.string().default('["--hostname","127.0.0.1","--port","4096","serve"]'),
   OPENCODE_WORKING_DIRECTORY: z.string().default("."),
   OPENCODE_START_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   OPENCODE_SKILL_ROOTS_JSON: z.string().optional(),
   SKILL_SYNC_INTERVAL_MS: z.coerce.number().int().min(10000).max(86400000).default(300000),
+  HUB_RUN_TIMEOUT_MS: z.coerce.number().int().min(10000).max(86400000).default(900000),
 });
 
 function parseStringArray(value: string, field: string): string[] {
@@ -42,6 +43,7 @@ export interface HubConfig {
   port: number;
   databasePath: string;
   skillSyncIntervalMs: number;
+  runTimeoutMs: number;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   opencode: {
     mode: "connect" | "managed";
@@ -49,6 +51,8 @@ export interface HubConfig {
     command: string;
     args: string[];
     workingDirectory: string;
+    configDirectory: string;
+    dataDirectory: string;
     lockFilePath: string;
     logFilePath: string;
     startTimeoutMs: number;
@@ -72,6 +76,7 @@ export function loadConfig(projectRoot: string): HubConfig {
     port: env.HUB_PORT,
     databasePath: path.resolve(projectRoot, env.HUB_DATA_PATH),
     skillSyncIntervalMs: env.SKILL_SYNC_INTERVAL_MS,
+    runTimeoutMs: env.HUB_RUN_TIMEOUT_MS,
     logLevel: env.HUB_LOG_LEVEL,
     opencode: {
       mode: env.OPENCODE_MODE,
@@ -79,6 +84,8 @@ export function loadConfig(projectRoot: string): HubConfig {
       command: env.OPENCODE_COMMAND,
       args: parseStringArray(env.OPENCODE_ARGS_JSON, "OPENCODE_ARGS_JSON"),
       workingDirectory: path.resolve(projectRoot, env.OPENCODE_WORKING_DIRECTORY),
+      configDirectory: path.join(projectRoot, "runtime", "opencode-config"),
+      dataDirectory: path.join(projectRoot, "runtime", "opencode-data"),
       lockFilePath: path.join(projectRoot, "runtime", "opencode.lock"),
       logFilePath: path.join(projectRoot, "runtime", "logs", "opencode.log"),
       startTimeoutMs: env.OPENCODE_START_TIMEOUT_MS,

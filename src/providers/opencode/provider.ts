@@ -20,6 +20,18 @@ export interface OpenCodeApiSkill {
   [key: string]: unknown;
 }
 
+export interface OpenCodeServerEvent {
+  type?: string;
+  properties?: Record<string, unknown>;
+}
+
+export interface OpenCodeRunHandle {
+  sessionId: string;
+  done: Promise<void>;
+  abort(): Promise<void>;
+  close(): void;
+}
+
 export class OpenCodeProvider {
   private child?: ChildProcessWithoutNullStreams;
   private ownsLock = false;
@@ -89,6 +101,7 @@ export class OpenCodeProvider {
         cwd: this.config.workingDirectory,
         shell: false,
         windowsHide: true,
+        env: this.runtimeEnvironment(),
       });
     } catch (error) {
       await this.releaseManagedLock();
@@ -144,6 +157,60 @@ export class OpenCodeProvider {
     return [];
   }
 
+  async startRun(options: { title: string; prompt: string; directory: string; onEvent: (event: OpenCodeServerEvent) => void }): Promise<OpenCodeRunHandle> {
+    const health = await this.checkHealth();
+    if (health.status !== "healthy") throw new Error("OpenCode is offline");
+    const session = await this.requestJson<{ id?: unknown }>("session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: options.title }),
+    });
+    if (!session || typeof session.id !== "string") throw new Error("OpenCode did not create a valid session");
+    const sessionId = session.id;
+    const subscription = await this.subscribe((event) => {
+      if (event.properties && event.properties.sessionID === sessionId) options.onEvent(event);
+    });
+    const endpoint = `session/${encodeURIComponent(sessionId)}/prompt_async`;
+    const url = new URL(endpoint, this.config.url);
+    url.searchParams.set("directory", options.directory);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: options.prompt }] }),
+      });
+      if (!response.ok) throw new Error(`OpenCode prompt request returned HTTP ${response.status}`);
+    } catch (error) {
+      subscription.close();
+      throw error;
+    }
+    return {
+      sessionId,
+      done: subscription.done,
+      close: subscription.close,
+      abort: async () => {
+        await this.requestJson(`session/${encodeURIComponent(sessionId)}/abort`, { method: "POST" });
+        subscription.close();
+      },
+    };
+  }
+
+  async replyToQuestion(requestId: string, answers: string[][]): Promise<void> {
+    await this.requestJson(`question/${encodeURIComponent(requestId)}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+  }
+
+  async replyToPermission(requestId: string, reply: "once" | "always" | "reject"): Promise<void> {
+    await this.requestJson(`permission/${encodeURIComponent(requestId)}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reply }),
+    });
+  }
+
   private async waitForHealthy(): Promise<ProviderHealth> {
     const deadline = Date.now() + this.config.startTimeoutMs;
     while (Date.now() < deadline) {
@@ -154,6 +221,58 @@ export class OpenCodeProvider {
     return this.setHealth("offline", `OpenCode did not become healthy within ${this.config.startTimeoutMs}ms`);
   }
 
+  private async requestJson<T = unknown>(endpoint: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(new URL(endpoint, this.config.url), init);
+    if (!response.ok) throw new Error(`OpenCode API returned HTTP ${response.status}`);
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
+  }
+
+  private async subscribe(onEvent: (event: OpenCodeServerEvent) => void): Promise<{ done: Promise<void>; close: () => void }> {
+    const controller = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const response = await fetch(new URL("event", this.config.url), { headers: { Accept: "text/event-stream" }, signal: controller.signal });
+    const body = response.body;
+    if (!response.ok || !body) throw new Error(`OpenCode event stream returned HTTP ${response.status}`);
+    const done = (async () => {
+      reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let data: string[] = [];
+      try {
+        while (true) {
+          const next = await reader.read();
+          if (next.done) break;
+          buffer += decoder.decode(next.value, { stream: true });
+          let lineEnd: number;
+          while ((lineEnd = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, lineEnd).replace(/\r$/, "");
+            buffer = buffer.slice(lineEnd + 1);
+            if (!line) {
+              if (data.length) {
+                try { onEvent(JSON.parse(data.join("\n")) as OpenCodeServerEvent); } catch { /* Ignore malformed event data. */ }
+                data = [];
+              }
+            } else if (line.startsWith("data:")) {
+              data.push(line.slice(5).trimStart());
+            }
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
+      } finally {
+        reader?.releaseLock();
+      }
+    })();
+    return {
+      done,
+      close: () => {
+        controller.abort();
+        void reader?.cancel().catch(() => undefined);
+      },
+    };
+  }
+
   private setHealth(status: ProviderHealth["status"], message?: string): ProviderHealth {
     this.lastHealth = { provider: "opencode", status, checkedAt: new Date().toISOString(), ...(message ? { message } : {}) };
     if (status === "healthy") this.restartAttempts = 0;
@@ -162,7 +281,7 @@ export class OpenCodeProvider {
 
   private async checkCommand(): Promise<{ ok: true } | { ok: false; message: string }> {
     return new Promise((resolve) => {
-      const child = spawn(this.config.command, ["--version"], { cwd: this.config.workingDirectory, shell: false, windowsHide: true });
+      const child = spawn(this.config.command, ["--version"], { cwd: this.config.workingDirectory, shell: false, windowsHide: true, env: this.runtimeEnvironment() });
       let output = "";
       const timeout = setTimeout(() => {
         child.kill();
@@ -189,6 +308,14 @@ export class OpenCodeProvider {
     await delay(1000);
     const result = await this.start();
     if (result.status !== "healthy") this.logger.warn({ attempt: this.restartAttempts, status: result.status }, "OpenCode restart attempt failed");
+  }
+
+  private runtimeEnvironment(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      XDG_CONFIG_HOME: this.config.configDirectory,
+      XDG_DATA_HOME: this.config.dataDirectory,
+    };
   }
 
   private async acquireManagedLock(): Promise<boolean> {

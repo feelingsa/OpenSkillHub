@@ -4,7 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SKILL WEB HUB</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="hub-shell">
@@ -12,6 +13,20 @@
         <p class="kicker">LOCAL OPENCODE</p>
         <h1>SKILL WEB HUB</h1>
         <div id="connectionState" class="connection-state">CONNECTING</div>
+        <div class="catalog-controls" aria-label="Skill catalog filters">
+          <label class="catalog-search">
+            <span class="sr-only">搜索 Skill</span>
+            <input id="skillSearch" type="search" autocomplete="off" placeholder="搜索 Skill" />
+          </label>
+          <label class="catalog-filter">
+            <span class="sr-only">页面状态</span>
+            <select id="skillFilter">
+              <option value="all">全部状态</option>
+              <option value="ready">页面已就绪</option>
+              <option value="pending">需要生成页面</option>
+            </select>
+          </label>
+        </div>
       </header>
 
       <section class="preview-stage" aria-label="OpenCode skills preview">
@@ -33,6 +48,11 @@
 
     </main>
 
-    <script src="./app.js" type="module"></script>
+    <section id="skillPage" class="skill-page" hidden>
+      <a class="skill-page-back" href="/">返回 Skill 目录</a>
+      <div id="skillPageContent" class="skill-page-content" aria-live="polite"></div>
+    </section>
+
+    <script src="/app.js" type="module"></script>
   </body>
 </html>
