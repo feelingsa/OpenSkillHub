@@ -10,6 +10,7 @@ export class HubDatabase {
     mkdirSync(path.dirname(filename), { recursive: true });
     this.database = new Database(filename);
     this.database.pragma("journal_mode = WAL");
+    this.database.pragma("foreign_keys = ON");
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS skills (
         id TEXT PRIMARY KEY,
@@ -98,7 +99,16 @@ export class HubDatabase {
         last_seen_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx ON admin_sessions(expires_at);
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
     `);
+    // Version records make future schema changes auditable without relying on the database filename.
+    const appliedAt = new Date().toISOString();
+    for (const id of ["001-core-schema", "002-admin-sessions", "003-storage-operations"]) {
+      this.database.prepare("INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(id, appliedAt);
+    }
   }
 
   upsertSkill(manifest: SkillManifest): void {
@@ -166,6 +176,19 @@ export class HubDatabase {
     return rows.map((row) => this.toRunRecord(row));
   }
 
+  listCompletedRunsBefore(cutoff: string): RunRecord[] {
+    const rows = this.database.prepare(`
+      SELECT * FROM runs WHERE completed_at IS NOT NULL AND completed_at < ? ORDER BY completed_at ASC
+    `).all(cutoff) as Record<string, unknown>[];
+    return rows.map((row) => this.toRunRecord(row));
+  }
+
+  deleteRuns(ids: string[]): number {
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map(() => "?").join(", ");
+    return this.database.prepare(`DELETE FROM runs WHERE id IN (${placeholders})`).run(...ids).changes;
+  }
+
   listAllGeneratedPages(limit = 500): GeneratedPageRecord[] {
     const rows = this.database.prepare("SELECT * FROM generated_pages ORDER BY updated_at DESC LIMIT ?").all(limit) as Record<string, unknown>[];
     return rows.map((row) => this.toGeneratedPageRecord(row));
@@ -203,6 +226,15 @@ export class HubDatabase {
       (SELECT COUNT(*) FROM generated_pages) AS generated_pages,
       (SELECT COALESCE(SUM(size_bytes), 0) FROM artifacts) AS artifact_bytes`).get() as Record<string, number>;
     return { skills: row.skills, runs: row.runs, artifacts: row.artifacts, generatedPages: row.generated_pages, artifactBytes: row.artifact_bytes };
+  }
+
+  async backup(destination: string): Promise<void> {
+    await this.database.backup(destination);
+  }
+
+  listSchemaMigrations(): Array<{ id: string; appliedAt: string }> {
+    const rows = this.database.prepare("SELECT id, applied_at FROM schema_migrations ORDER BY id ASC").all() as Array<{ id: string; applied_at: string }>;
+    return rows.map((row) => ({ id: row.id, appliedAt: row.applied_at }));
   }
 
   createRun(run: RunRecord): void {

@@ -44,6 +44,14 @@ describe("administrator authentication", () => {
       expect(overview.statusCode).toBe(200);
       expect(overview.json()).toMatchObject({ runtime: { service: "skill-web-hub" }, skills: { total: 0 } });
       expect(overview.body).not.toContain("127.0.0.1:1");
+
+      const cleanupPreview = await app.inject({ method: "GET", url: "/api/admin/storage/cleanup/preview", headers: { cookie } });
+      expect(cleanupPreview.statusCode).toBe(200);
+      const cleanupWithoutConfirmation = await app.inject({ method: "POST", url: "/api/admin/storage/cleanup", headers: { cookie }, payload: {} });
+      expect(cleanupWithoutConfirmation.statusCode).toBe(409);
+      const diagnostics = await app.inject({ method: "GET", url: "/api/admin/diagnostics", headers: { cookie } });
+      expect(diagnostics.statusCode).toBe(200);
+      expect(diagnostics.body).not.toContain("127.0.0.1:1");
     } finally {
       await app.close();
     }

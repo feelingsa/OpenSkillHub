@@ -7,6 +7,9 @@ import { AdminAuthService } from "../auth/service.js";
 import type { SkillScanner } from "../skills/scanner.js";
 import type { HubDatabase } from "../storage/database.js";
 import { RunService, RunValidationError } from "../runs/service.js";
+import { StorageMaintenanceService } from "../storage/maintenance.js";
+import { createReadStream } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type { ArtifactRecord, GeneratedPagePreset, GeneratedPageRecord, PublicSkillManifest, RunRecord, SkillManifest } from "../types.js";
 
 declare module "fastify" {
@@ -47,6 +50,13 @@ function toPublicGeneratedPage(page: GeneratedPageRecord) {
   };
 }
 
+function redactDiagnosticLog(value: string): string {
+  return value
+    .replace(/\b(api[_-]?key|secret|access[_-]?token|password)\s*[:=]\s*\S+/gi, (_match, key: string) => `${key}=[redacted]`)
+    .replace(/https?:\/\/[^\s)]+/gi, "[url]")
+    .replace(/[a-zA-Z]:\\[^\s)]+/g, "[local-path]");
+}
+
 export async function registerApiRoutes(
   app: FastifyInstance,
   options: {
@@ -58,10 +68,12 @@ export async function registerApiRoutes(
     artifacts: ArtifactService;
     pages: PageGenerator;
     auth?: AdminAuthService;
+    storage?: StorageMaintenanceService;
   },
 ): Promise<void> {
   const { config, database, provider, scanner, runs, artifacts, pages } = options;
   const auth = options.auth ?? new AdminAuthService(config, database);
+  const storage = options.storage ?? new StorageMaintenanceService(config, database, provider);
 
   const requireAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
     const session = auth.getSession(request);
@@ -115,8 +127,16 @@ export async function registerApiRoutes(
       runs: { active: runsList.filter((run) => ["created", "running", "waiting_question", "waiting_permission"].includes(run.status)).length, total: runsList.length },
     };
   });
-  app.get("/api/admin/providers", { preHandler: requireAdmin }, async () => [{ ...provider.getHealthSnapshot(), ...provider.getRuntimeInfo() }]);
+  app.get("/api/admin/providers", { preHandler: requireAdmin }, async () => [{ ...provider.getHealthSnapshot(), ...provider.getRuntimeInfo(), mode: config.opencode.mode }]);
   app.post("/api/admin/providers/opencode/test", { preHandler: requireAdmin }, async () => provider.checkHealth());
+  app.get("/api/admin/providers/opencode/logs", { preHandler: requireAdmin }, async () => {
+    try {
+      const source = await readFile(config.opencode.logFilePath, "utf8");
+      return { lines: source.split(/\r?\n/).filter(Boolean).slice(-100).map(redactDiagnosticLog) };
+    } catch {
+      return { lines: [] };
+    }
+  });
   app.get("/api/admin/skills", { preHandler: requireAdmin }, async () => database.listSkills().map(toPublicManifest));
   app.post("/api/admin/skills/scan", { preHandler: requireAdmin }, async () => scanner.sync());
   app.post<{ Params: { skillId: string }; Body: { enabled?: unknown } }>("/api/admin/skills/:skillId/enabled", { preHandler: requireAdmin }, async (request, reply) => {
@@ -134,6 +154,10 @@ export async function registerApiRoutes(
     return reply.code(page.status === "ready" ? 200 : 202).send(toPublicGeneratedPage(page));
   });
   app.get("/api/admin/pages", { preHandler: requireAdmin }, async () => database.listAllGeneratedPages().map((page) => ({ skillId: page.skillId, ...toPublicGeneratedPage(page) })));
+  app.get<{ Params: { skillId: string; version: string } }>("/api/admin/pages/:skillId/:version/logs", { preHandler: requireAdmin }, async (request, reply) => {
+    const page = database.listGeneratedPages(request.params.skillId).find((candidate) => candidate.version === request.params.version);
+    return page ? database.listGeneratedPageEvents(page.id) : reply.code(404).send({ error: "PAGE_VERSION_NOT_FOUND" });
+  });
   app.post<{ Params: { skillId: string; version: string } }>("/api/admin/pages/:skillId/activate/:version", { preHandler: requireAdmin }, async (request, reply) => {
     const page = pages.activate(request.params.skillId, request.params.version);
     return page ? toPublicGeneratedPage(page) : reply.code(404).send({ error: "PAGE_VERSION_NOT_FOUND" });
@@ -147,7 +171,30 @@ export async function registerApiRoutes(
     bootstrapAdministrator: { username: request.adminSession!.username, role: "administrator", source: "environment" },
     multiUserManagement: "planned-for-m6",
   }));
-  app.get("/api/admin/storage", { preHandler: requireAdmin }, async () => database.getAdminStorageSummary());
+  app.get("/api/admin/storage", { preHandler: requireAdmin }, async () => ({ ...database.getAdminStorageSummary(), retentionDays: config.artifactRetentionDays ?? 30 }));
+  app.get<{ Querystring: { retentionDays?: string } }>("/api/admin/storage/cleanup/preview", { preHandler: requireAdmin }, async (request, reply) => {
+    const requested = request.query.retentionDays === undefined ? undefined : Number(request.query.retentionDays);
+    if (requested !== undefined && (!Number.isInteger(requested) || requested < 1 || requested > 3650)) return reply.code(400).send({ error: "INVALID_RETENTION_DAYS" });
+    return storage.previewCleanup(requested);
+  });
+  app.post<{ Body: { retentionDays?: unknown; confirm?: unknown } }>("/api/admin/storage/cleanup", { preHandler: requireAdmin }, async (request, reply) => {
+    const requested = request.body?.retentionDays === undefined ? undefined : request.body.retentionDays;
+    if (requested !== undefined && (!Number.isInteger(requested) || (requested as number) < 1 || (requested as number) > 3650)) return reply.code(400).send({ error: "INVALID_RETENTION_DAYS" });
+    if (request.body?.confirm !== true) return reply.code(409).send({ error: "CLEANUP_CONFIRMATION_REQUIRED" });
+    return storage.cleanup(requested as number | undefined);
+  });
+  app.get("/api/admin/diagnostics", { preHandler: requireAdmin }, async (_request, reply) => {
+    reply.type("application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=skill-web-hub-diagnostics.json");
+    return storage.diagnostics();
+  });
+  app.get("/api/admin/storage/backups", { preHandler: requireAdmin }, async () => storage.listBackups());
+  app.post("/api/admin/storage/backups", { preHandler: requireAdmin }, async (_request, reply) => reply.code(201).send(await storage.createBackup()));
+  app.get<{ Params: { backupId: string } }>("/api/admin/storage/backups/:backupId/download", { preHandler: requireAdmin }, async (request, reply) => {
+    const backup = await storage.openBackup(request.params.backupId);
+    if (!backup) return reply.code(404).send({ error: "BACKUP_NOT_FOUND" });
+    reply.type("application/vnd.sqlite3").header("Content-Disposition", `attachment; filename="${request.params.backupId}.db"`);
+    return reply.send(createReadStream(backup));
+  });
 
   app.post("/api/skills/sync", async () => scanner.sync());
   app.get("/api/skills", async () => database.listSkills().filter((skill) => skill.enabled).map(toPublicManifest));

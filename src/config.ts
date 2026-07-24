@@ -28,6 +28,7 @@ const envSchema = z.object({
   // This value deliberately works only for a local first boot. Replace it before LAN use.
   HUB_ADMIN_PASSWORD: z.string().min(12).default("change-me-before-lan-use"),
   HUB_SESSION_TTL_MS: z.coerce.number().int().min(60000).max(2592000000).default(86400000),
+  HUB_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
 });
 
 function parseStringArray(value: string, field: string): string[] {
@@ -63,6 +64,7 @@ export interface HubConfig {
     password: string;
     sessionTtlMs: number;
   };
+  artifactRetentionDays?: number;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   opencode: {
     mode: "connect" | "managed";
@@ -114,6 +116,7 @@ export function loadConfig(projectRoot: string): HubConfig {
       password: env.HUB_ADMIN_PASSWORD,
       sessionTtlMs: env.HUB_SESSION_TTL_MS,
     },
+    artifactRetentionDays: env.HUB_ARTIFACT_RETENTION_DAYS,
     logLevel: env.HUB_LOG_LEVEL,
     opencode: {
       mode: env.OPENCODE_MODE,

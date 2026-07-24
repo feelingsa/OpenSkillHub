@@ -14,6 +14,7 @@
     "test:browser": "node scripts/check-browser.mjs",
     "validate:real-page": "tsx scripts/validate-real-page-generation.ts",
     "capture:desktop": "node scripts/capture-desktop-baseline.mjs",
+    "capture:admin": "node scripts/capture-admin-desktop.mjs",
     "audit:design": "node scripts/audit-design-sources.mjs"
   },
   "license": "UNLICENSED",

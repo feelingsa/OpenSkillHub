@@ -12,6 +12,7 @@ import { registerApiRoutes } from "./routes/api.js";
 import { RunService } from "./runs/service.js";
 import { SkillScanner } from "./skills/scanner.js";
 import { HubDatabase } from "./storage/database.js";
+import { StorageMaintenanceService } from "./storage/maintenance.js";
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = path.resolve(moduleDirectory, "..");
@@ -28,6 +29,7 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
   const artifacts = new ArtifactService(config, database);
   const runs = new RunService(config, database, provider, artifacts);
   const pages = new PageGenerator(config, database, provider);
+  const storage = new StorageMaintenanceService(config, database, provider);
   const auth = new AdminAuthService(config, database);
   let scheduledSync: NodeJS.Timeout | undefined;
 
@@ -71,7 +73,7 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     wildcard: false,
     decorateReply: false,
   });
-  await registerApiRoutes(app, { config, database, provider, scanner, runs, artifacts, pages, auth });
+  await registerApiRoutes(app, { config, database, provider, scanner, runs, artifacts, pages, auth, storage });
 
   for (const route of ["/login", "/runs", "/skills/:skillId", "/runs/:runId", "/admin", "/admin/*"]) {
     app.get(route, async (_request, reply) => reply.sendFile("index.html"));
