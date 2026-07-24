@@ -29,6 +29,15 @@ const envSchema = z.object({
   HUB_ADMIN_PASSWORD: z.string().min(12).default("change-me-before-lan-use"),
   HUB_SESSION_TTL_MS: z.coerce.number().int().min(60000).max(2592000000).default(86400000),
   HUB_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  HUB_AUTH_REQUIRED: z.enum(["true", "false"]).default("true"),
+  HUB_MAX_CONCURRENT_RUNS_PER_USER: z.coerce.number().int().min(1).max(100).default(2),
+  HUB_MAX_RUNS_PER_USER_PER_DAY: z.coerce.number().int().min(1).max(10000).default(50),
+  HUB_REQUESTS_PER_MINUTE: z.coerce.number().int().min(10).max(10000).default(240),
+  HUB_LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().min(1).max(1000).default(12),
+  HUB_HIGH_RISK_SKILL_IDS_JSON: z.string().default("[]"),
+  HUB_UPLOAD_MAX_BYTES: z.coerce.number().int().min(1024).max(1073741824).default(52428800),
+  // Set this behind a TLS-terminating LAN reverse proxy so session cookies cannot traverse HTTP.
+  HUB_COOKIE_SECURE: z.enum(["true", "false"]).default("false"),
 });
 
 function parseStringArray(value: string, field: string): string[] {
@@ -65,6 +74,14 @@ export interface HubConfig {
     sessionTtlMs: number;
   };
   artifactRetentionDays?: number;
+  authRequired?: boolean;
+  maxConcurrentRunsPerUser?: number;
+  maxRunsPerUserPerDay?: number;
+  requestsPerMinute?: number;
+  loginAttemptsPerMinute?: number;
+  highRiskSkillIds?: string[];
+  uploadMaxBytes?: number;
+  cookieSecure?: boolean;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   opencode: {
     mode: "connect" | "managed";
@@ -117,6 +134,14 @@ export function loadConfig(projectRoot: string): HubConfig {
       sessionTtlMs: env.HUB_SESSION_TTL_MS,
     },
     artifactRetentionDays: env.HUB_ARTIFACT_RETENTION_DAYS,
+    authRequired: env.HUB_AUTH_REQUIRED === "true",
+    maxConcurrentRunsPerUser: env.HUB_MAX_CONCURRENT_RUNS_PER_USER,
+    maxRunsPerUserPerDay: env.HUB_MAX_RUNS_PER_USER_PER_DAY,
+    requestsPerMinute: env.HUB_REQUESTS_PER_MINUTE,
+    loginAttemptsPerMinute: env.HUB_LOGIN_ATTEMPTS_PER_MINUTE,
+    highRiskSkillIds: parseStringArray(env.HUB_HIGH_RISK_SKILL_IDS_JSON, "HUB_HIGH_RISK_SKILL_IDS_JSON"),
+    uploadMaxBytes: env.HUB_UPLOAD_MAX_BYTES,
+    cookieSecure: env.HUB_COOKIE_SECURE === "true",
     logLevel: env.HUB_LOG_LEVEL,
     opencode: {
       mode: env.OPENCODE_MODE,

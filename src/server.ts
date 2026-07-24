@@ -13,6 +13,7 @@ import { RunService } from "./runs/service.js";
 import { SkillScanner } from "./skills/scanner.js";
 import { HubDatabase } from "./storage/database.js";
 import { StorageMaintenanceService } from "./storage/maintenance.js";
+import { UploadService } from "./uploads/service.js";
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = path.resolve(moduleDirectory, "..");
@@ -22,15 +23,18 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     logger: { level: config.logLevel },
     requestIdHeader: "x-request-id",
     genReqId: () => randomUUID(),
+    bodyLimit: config.uploadMaxBytes ?? 50 * 1024 * 1024,
   });
   const database = new HubDatabase(config.databasePath);
   const provider = new OpenCodeProvider(config.opencode, app.log);
   const scanner = new SkillScanner(config, provider, database);
   const artifacts = new ArtifactService(config, database);
-  const runs = new RunService(config, database, provider, artifacts);
+  const uploads = new UploadService(config, database);
+  const runs = new RunService(config, database, provider, artifacts, uploads);
   const pages = new PageGenerator(config, database, provider);
   const storage = new StorageMaintenanceService(config, database, provider);
   const auth = new AdminAuthService(config, database);
+  auth.ensureBootstrapAdministrator();
   let scheduledSync: NodeJS.Timeout | undefined;
 
   const syncSkillsAndQueuePages = async () => {
@@ -50,6 +54,8 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     reply.header("X-Frame-Options", "SAMEORIGIN");
     reply.header("Referrer-Policy", "same-origin");
     reply.header("Cross-Origin-Resource-Policy", "same-origin");
+    if (!reply.getHeader("content-security-policy")) reply.header("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self';");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   });
   app.setErrorHandler((error, request, reply) => {
     const appError = error as { statusCode?: number; message?: string };
@@ -73,7 +79,8 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     wildcard: false,
     decorateReply: false,
   });
-  await registerApiRoutes(app, { config, database, provider, scanner, runs, artifacts, pages, auth, storage });
+  app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => done(null, body));
+  await registerApiRoutes(app, { config, database, provider, scanner, runs, artifacts, pages, auth, storage, uploads });
 
   for (const route of ["/login", "/runs", "/skills/:skillId", "/runs/:runId", "/admin", "/admin/*"]) {
     app.get(route, async (_request, reply) => reply.sendFile("index.html"));

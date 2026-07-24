@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { ArtifactRecord, GeneratedPageEvent, GeneratedPageRecord, GeneratedPageStatus, ProviderId, RunEvent, RunInputValues, RunRecord, RunStatus, SkillManifest, StoredRunEvent } from "../types.js";
+import type { ArtifactRecord, GeneratedPageEvent, GeneratedPageRecord, GeneratedPageStatus, ProviderId, RunEvent, RunInputValues, RunRecord, RunStatus, SkillManifest, StoredRunEvent, UploadRecord, UserRecord, UserRole } from "../types.js";
 
 export class HubDatabase {
   private readonly database: Database.Database;
@@ -62,6 +62,18 @@ export class HubDatabase {
       );
       CREATE INDEX IF NOT EXISTS artifacts_run_created_idx ON artifacts(run_id, created_at ASC);
       CREATE INDEX IF NOT EXISTS artifacts_owner_created_idx ON artifacts(owner_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS uploads (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        storage_name TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(owner_id, storage_name)
+      );
+      CREATE INDEX IF NOT EXISTS uploads_owner_created_idx ON uploads(owner_id, created_at DESC);
       CREATE TABLE IF NOT EXISTS generated_pages (
         id TEXT PRIMARY KEY,
         skill_id TEXT NOT NULL,
@@ -99,14 +111,49 @@ export class HubDatabase {
         last_seen_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx ON admin_sessions(expires_at);
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL,
+        disabled INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        csrf_token TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS user_sessions_user_expires_idx ON user_sessions(user_id, expires_at);
+      CREATE TABLE IF NOT EXISTS audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        type TEXT NOT NULL,
+        resource_id TEXT,
+        details_json TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS audit_events_user_created_idx ON audit_events(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS audit_events_type_created_idx ON audit_events(type, created_at DESC);
       CREATE TABLE IF NOT EXISTS schema_migrations (
         id TEXT PRIMARY KEY,
         applied_at TEXT NOT NULL
       );
     `);
+    try {
+      this.database.exec("ALTER TABLE user_sessions ADD COLUMN csrf_token TEXT");
+    } catch {
+      // Existing installations have already applied the column migration.
+    }
     // Version records make future schema changes auditable without relying on the database filename.
     const appliedAt = new Date().toISOString();
-    for (const id of ["001-core-schema", "002-admin-sessions", "003-storage-operations"]) {
+    for (const id of ["001-core-schema", "002-admin-sessions", "003-storage-operations", "004-user-accounts", "005-audit-events", "006-session-csrf-token", "007-user-uploads"]) {
       this.database.prepare("INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(id, appliedAt);
     }
   }
@@ -218,6 +265,99 @@ export class HubDatabase {
     this.database.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?").run(new Date().toISOString());
   }
 
+  createUser(user: UserRecord, passwordHash: string): void {
+    this.database.prepare(`
+      INSERT INTO users (id, username, password_hash, role, disabled, created_at, updated_at)
+      VALUES (@id, @username, @passwordHash, @role, @disabled, @createdAt, @updatedAt)
+    `).run({ ...user, passwordHash, disabled: user.disabled ? 1 : 0 });
+  }
+
+  getUserByUsername(username: string): (UserRecord & { passwordHash: string }) | undefined {
+    const row = this.database.prepare("SELECT * FROM users WHERE username = ? COLLATE NOCASE").get(username) as Record<string, unknown> | undefined;
+    return row ? { ...this.toUserRecord(row), passwordHash: String(row.password_hash) } : undefined;
+  }
+
+  getUser(id: string): UserRecord | undefined {
+    const row = this.database.prepare("SELECT * FROM users WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.toUserRecord(row) : undefined;
+  }
+
+  listUsers(): UserRecord[] {
+    const rows = this.database.prepare("SELECT * FROM users ORDER BY role DESC, username COLLATE NOCASE").all() as Record<string, unknown>[];
+    return rows.map((row) => this.toUserRecord(row));
+  }
+
+  countEnabledAdministrators(): number {
+    const row = this.database.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'administrator' AND disabled = 0").get() as { count: number };
+    return row.count;
+  }
+
+  updateUser(id: string, update: { role?: UserRole; disabled?: boolean; passwordHash?: string }): UserRecord | undefined {
+    const existing = this.getUserByUsername(this.getUser(id)?.username ?? "");
+    if (!existing) return undefined;
+    const updatedAt = new Date().toISOString();
+    this.database.prepare(`UPDATE users SET role = ?, disabled = ?, password_hash = ?, updated_at = ? WHERE id = ?`).run(
+      update.role ?? existing.role,
+      update.disabled === undefined ? (existing.disabled ? 1 : 0) : (update.disabled ? 1 : 0),
+      update.passwordHash ?? existing.passwordHash,
+      updatedAt,
+      id,
+    );
+    return this.getUser(id);
+  }
+
+  createUserSession(tokenHash: string, userId: string, expiresAt: string, csrfToken: string): void {
+    const now = new Date().toISOString();
+    this.database.prepare("INSERT INTO user_sessions (token_hash, user_id, csrf_token, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(tokenHash, userId, csrfToken, now, expiresAt, now);
+  }
+
+  getUserSession(tokenHash: string): (UserRecord & { expiresAt: string; csrfToken: string }) | undefined {
+    const row = this.database.prepare(`
+      SELECT users.*, user_sessions.expires_at, user_sessions.csrf_token FROM user_sessions JOIN users ON users.id = user_sessions.user_id WHERE user_sessions.token_hash = ?
+    `).get(tokenHash) as Record<string, unknown> | undefined;
+    if (!row || Number(row.disabled) === 1 || Date.parse(String(row.expires_at)) <= Date.now()) {
+      if (row) this.deleteUserSession(tokenHash);
+      return undefined;
+    }
+    this.database.prepare("UPDATE user_sessions SET last_seen_at = ? WHERE token_hash = ?").run(new Date().toISOString(), tokenHash);
+    return { ...this.toUserRecord(row), expiresAt: String(row.expires_at), csrfToken: typeof row.csrf_token === "string" ? row.csrf_token : "" };
+  }
+
+  deleteUserSession(tokenHash: string): void {
+    this.database.prepare("DELETE FROM user_sessions WHERE token_hash = ?").run(tokenHash);
+  }
+
+  purgeExpiredUserSessions(): void {
+    this.database.prepare("DELETE FROM user_sessions WHERE expires_at <= ?").run(new Date().toISOString());
+  }
+
+  deleteUserSessionsByUserId(userId: string): void {
+    this.database.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(userId);
+  }
+
+  appendAuditEvent(event: { userId?: string; type: string; resourceId?: string; details?: Record<string, unknown> }): void {
+    this.database.prepare("INSERT INTO audit_events (user_id, type, resource_id, details_json, created_at) VALUES (?, ?, ?, ?, ?)").run(
+      event.userId ?? null,
+      event.type.slice(0, 100),
+      event.resourceId?.slice(0, 200) ?? null,
+      event.details ? JSON.stringify(event.details).slice(0, 4000) : null,
+      new Date().toISOString(),
+    );
+  }
+
+  listAuditEvents(limit = 200): Array<{ id: number; userId?: string; type: string; resourceId?: string; details?: Record<string, unknown>; createdAt: string }> {
+    const rows = this.database.prepare("SELECT * FROM audit_events ORDER BY id DESC LIMIT ?").all(limit) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: Number(row.id),
+      ...(typeof row.user_id === "string" ? { userId: row.user_id } : {}),
+      type: String(row.type),
+      ...(typeof row.resource_id === "string" ? { resourceId: row.resource_id } : {}),
+      ...(typeof row.details_json === "string" ? { details: JSON.parse(row.details_json) as Record<string, unknown> } : {}),
+      createdAt: String(row.created_at),
+    }));
+  }
+
   getAdminStorageSummary(): { skills: number; runs: number; artifacts: number; generatedPages: number; artifactBytes: number } {
     const row = this.database.prepare(`SELECT
       (SELECT COUNT(*) FROM skills WHERE is_deleted = 0) AS skills,
@@ -261,6 +401,16 @@ export class HubDatabase {
       SELECT * FROM runs WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?
     `).all(ownerId, limit) as Record<string, unknown>[];
     return rows.map((row) => this.toRunRecord(row));
+  }
+
+  countActiveRunsByOwner(ownerId: string): number {
+    const row = this.database.prepare("SELECT COUNT(*) AS count FROM runs WHERE owner_id = ? AND status IN ('created', 'running', 'waiting_question', 'waiting_permission')").get(ownerId) as { count: number };
+    return row.count;
+  }
+
+  countRunsByOwnerSince(ownerId: string, since: string): number {
+    const row = this.database.prepare("SELECT COUNT(*) AS count FROM runs WHERE owner_id = ? AND created_at >= ?").get(ownerId, since) as { count: number };
+    return row.count;
   }
 
   updateRun(id: string, update: { status: RunStatus; summary?: string; errorMessage?: string; sessionId?: string; completedAt?: string }): RunRecord | undefined {
@@ -325,6 +475,20 @@ export class HubDatabase {
       FROM artifacts WHERE id = ?
     `).get(id) as Record<string, unknown> | undefined;
     return row ? this.toArtifactRecord(row) : undefined;
+  }
+
+  createUpload(upload: UploadRecord): void {
+    this.database.prepare(`
+      INSERT INTO uploads (id, owner_id, storage_name, display_name, mime_type, size_bytes, sha256, created_at)
+      VALUES (@id, @ownerId, @storageName, @displayName, @mimeType, @sizeBytes, @sha256, @createdAt)
+    `).run(upload);
+  }
+
+  getUpload(id: string): UploadRecord | undefined {
+    const row = this.database.prepare(`
+      SELECT id, owner_id, storage_name, display_name, mime_type, size_bytes, sha256, created_at FROM uploads WHERE id = ?
+    `).get(id) as Record<string, unknown> | undefined;
+    return row ? this.toUploadRecord(row) : undefined;
   }
 
   createGeneratedPage(page: GeneratedPageRecord): void {
@@ -456,6 +620,19 @@ export class HubDatabase {
     };
   }
 
+  private toUploadRecord(row: Record<string, unknown>): UploadRecord {
+    return {
+      id: String(row.id),
+      ownerId: String(row.owner_id),
+      storageName: String(row.storage_name),
+      displayName: String(row.display_name),
+      mimeType: String(row.mime_type),
+      sizeBytes: Number(row.size_bytes),
+      sha256: String(row.sha256),
+      createdAt: String(row.created_at),
+    };
+  }
+
   private toGeneratedPageRecord(row: Record<string, unknown>): GeneratedPageRecord {
     return {
       id: String(row.id),
@@ -474,6 +651,19 @@ export class HubDatabase {
       updatedAt: String(row.updated_at),
       ...(typeof row.activated_at === "string" ? { activatedAt: row.activated_at } : {}),
     };
+  }
+
+  private toUserRecord(row: Record<string, unknown>, includePasswordHash = false): UserRecord & { passwordHash?: string } {
+    const record: UserRecord & { passwordHash?: string } = {
+      id: String(row.id),
+      username: String(row.username),
+      role: row.role as UserRole,
+      disabled: Number(row.disabled) === 1,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+    if (includePasswordHash) record.passwordHash = String(row.password_hash);
+    return record;
   }
 
   close(): void {

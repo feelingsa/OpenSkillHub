@@ -2,7 +2,9 @@ import { createMotionScope } from "/motion/index.js";
 
 const root = document.querySelector("#adminRoot");
 let adminMotion = null;
-const isAdminRoute = window.location.pathname === "/login" || window.location.pathname.startsWith("/admin");
+let csrfToken = "";
+const isAdminRoute = window.location.pathname.startsWith("/admin");
+const isLoginRoute = window.location.pathname === "/login";
 
 const navItems = [
   ["/admin", "Overview"], ["/admin/providers", "Providers"], ["/admin/skills", "Skills"],
@@ -14,7 +16,10 @@ function escapeHtml(value) {
 }
 
 async function api(url, options = {}) {
-  const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  const method = options.method || "GET";
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (!["GET", "HEAD"].includes(method) && csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  const response = await fetch(url, { credentials: "same-origin", headers, ...options });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     const error = new Error(payload.error || "REQUEST_FAILED");
@@ -26,13 +31,14 @@ async function api(url, options = {}) {
 
 function renderLogin(message = "") {
   root.hidden = false;
-  root.innerHTML = `<section class="admin-login"><div class="admin-login-card"><p class="admin-eyebrow">SKILL WEB HUB</p><h1>Administrator access</h1><p>Use the administrator credentials configured on this Hub host.</p><form id="adminLoginForm"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">Sign in</button></form></div></section>`;
+  root.innerHTML = `<section class="admin-login"><div class="admin-login-card"><p class="admin-eyebrow">SKILL WEB HUB</p><h1>Sign in</h1><p>Use the account created by this Hub's administrator.</p><form id="adminLoginForm"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">Sign in</button></form></div></section>`;
   root.querySelector("form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
       await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: form.get("username"), password: form.get("password") }) });
-      window.location.assign("/admin");
+      const session = await api("/api/auth/session");
+      window.location.assign(session.role === "administrator" ? "/admin" : "/");
     } catch { renderLogin("The username or password is not valid."); }
   });
 }
@@ -54,8 +60,9 @@ function setNotice(message, kind = "") { const element = root.querySelector("#ad
 
 async function renderOverview(session) {
   shell("System overview", `<section class="admin-panel admin-loading" aria-busy="true">Loading system status...</section>`, session);
-  const data = await api("/api/admin/overview");
-  shell("System overview", `<div class="admin-metrics"><article><span>Provider</span><strong>${escapeHtml(data.provider.status)}</strong><small>${escapeHtml(data.provider.provider)}</small></article><article><span>Skills</span><strong>${data.skills.enabled} / ${data.skills.total}</strong><small>enabled</small></article><article><span>Pages</span><strong>${data.pages.queued + data.pages.generating}</strong><small>queue active</small></article><article><span>Runs</span><strong>${data.runs.active}</strong><small>active of ${data.runs.total}</small></article></div><section class="admin-panel"><h2>Service status</h2><dl class="admin-definition"><div><dt>Node</dt><dd>${escapeHtml(data.runtime.node)}</dd></div><div><dt>Scanner interval</dt><dd>${Math.round(data.runtime.scannerIntervalMs / 1000)} seconds</dd></div><div><dt>Artifacts</dt><dd>${data.storage.artifacts} files, ${Math.round(data.storage.artifactBytes / 1024)} KB</dd></div></dl></section>`, session);
+  const [data, audit] = await Promise.all([api("/api/admin/overview"), api("/api/admin/audit")]);
+  const auditRows = audit.slice(0, 8).map((event) => `<tr><td>${escapeHtml(new Date(event.createdAt).toLocaleString())}</td><td>${escapeHtml(event.type)}</td><td>${escapeHtml(event.resourceId || "-")}</td></tr>`).join("");
+  shell("System overview", `<div class="admin-metrics"><article><span>Provider</span><strong>${escapeHtml(data.provider.status)}</strong><small>${escapeHtml(data.provider.provider)}</small></article><article><span>Skills</span><strong>${data.skills.enabled} / ${data.skills.total}</strong><small>enabled</small></article><article><span>Pages</span><strong>${data.pages.queued + data.pages.generating}</strong><small>queue active</small></article><article><span>Runs</span><strong>${data.runs.active}</strong><small>active of ${data.runs.total}</small></article></div><section class="admin-panel"><h2>Service status</h2><dl class="admin-definition"><div><dt>Node</dt><dd>${escapeHtml(data.runtime.node)}</dd></div><div><dt>Scanner interval</dt><dd>${Math.round(data.runtime.scannerIntervalMs / 1000)} seconds</dd></div><div><dt>Artifacts</dt><dd>${data.storage.artifacts} files, ${Math.round(data.storage.artifactBytes / 1024)} KB</dd></div></dl></section><section class="admin-panel"><h2>Recent audit activity</h2>${table(["Time", "Action", "Resource"], auditRows)}</section>`, session);
 }
 
 async function renderProviders(session) {
@@ -94,14 +101,16 @@ async function renderPages(session) {
 async function renderRuns(session) {
   shell("Global runs", `<section class="admin-panel admin-loading" aria-busy="true">Loading runs...</section>`, session);
   const runs = await api("/api/admin/runs");
-  shell("Global runs", `<section class="admin-panel">${table(["Skill", "Status", "Created", "Summary", "Action"], runs.map((run) => `<tr><td>${escapeHtml(run.skillId)}</td><td>${valueStatus(run.status)}</td><td>${escapeHtml(new Date(run.createdAt).toLocaleString())}</td><td>${escapeHtml(run.summary || run.errorMessage || "-")}</td><td>${["created", "running", "waiting_question", "waiting_permission"].includes(run.status) ? `<button class="admin-inline-action admin-danger" data-run-abort="${escapeHtml(run.id)}">Terminate</button>` : ""}</td></tr>`).join(""))}</section>`, session);
+  shell("Global runs", `<section class="admin-panel">${table(["Owner", "Skill", "Status", "Created", "Summary", "Action"], runs.map((run) => `<tr><td>${escapeHtml(run.ownerId)}</td><td>${escapeHtml(run.skillId)}</td><td>${valueStatus(run.status)}</td><td>${escapeHtml(new Date(run.createdAt).toLocaleString())}</td><td>${escapeHtml(run.summary || run.errorMessage || "-")}</td><td>${["created", "running", "waiting_question", "waiting_permission"].includes(run.status) ? `<button class="admin-inline-action admin-danger" data-run-abort="${escapeHtml(run.id)}">Terminate</button>` : ""}</td></tr>`).join(""))}</section>`, session);
   root.querySelectorAll("[data-run-abort]").forEach((button) => button.addEventListener("click", async () => { if (!window.confirm("Terminate this run?")) return; await api(`/api/admin/runs/${encodeURIComponent(button.dataset.runAbort)}/abort`, { method: "POST" }); void renderRuns(session); }));
 }
 
 async function renderUsers(session) {
   shell("Users and sessions", `<section class="admin-panel admin-loading" aria-busy="true">Loading administrator details...</section>`, session);
-  const data = await api("/api/admin/users");
-  shell("Users and sessions", `<section class="admin-panel"><h2>Bootstrap administrator</h2>${table(["Username", "Role", "Source"], `<tr><td>${escapeHtml(data.bootstrapAdministrator.username)}</td><td>${escapeHtml(data.bootstrapAdministrator.role)}</td><td>${escapeHtml(data.bootstrapAdministrator.source)}</td></tr>`)}<p class="admin-muted">${escapeHtml(data.multiUserManagement)}</p></section>`, session);
+  const users = await api("/api/admin/users");
+  shell("Users and sessions", `<section class="admin-panel"><div class="admin-panel-heading"><h2>Accounts</h2><span class="admin-muted">${users.length} accounts</span></div>${table(["Username", "Role", "State", "Created", "Action"], users.map((user) => `<tr><td>${escapeHtml(user.username)}</td><td>${escapeHtml(user.role)}</td><td>${valueStatus(user.disabled ? "disabled" : "enabled")}</td><td>${escapeHtml(new Date(user.createdAt).toLocaleString())}</td><td><button class="admin-inline-action" data-user-toggle="${escapeHtml(user.id)}" data-disabled="${!user.disabled}">${user.disabled ? "Enable" : "Disable"}</button></td></tr>`).join(""))}</section><section class="admin-panel"><h2>Create account</h2><form id="createUserForm" class="admin-user-form"><label>Username<input name="username" autocomplete="off" required></label><label>Temporary password<input name="password" type="password" autocomplete="new-password" required minlength="12"></label><label>Role<select name="role"><option value="user">User</option><option value="administrator">Administrator</option></select></label><button type="submit">Create account</button></form></section>`, session);
+  root.querySelectorAll("[data-user-toggle]").forEach((button) => button.addEventListener("click", async () => { await api(`/api/admin/users/${encodeURIComponent(button.dataset.userToggle)}`, { method: "PATCH", body: JSON.stringify({ disabled: button.dataset.disabled === "true" }) }); void renderUsers(session); }));
+  root.querySelector("#createUserForm").addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { await api("/api/admin/users", { method: "POST", body: JSON.stringify({ username: form.get("username"), password: form.get("password"), role: form.get("role") }) }); setNotice("Account created", "success"); void renderUsers(session); } catch { setNotice("Account could not be created", "error"); } });
 }
 
 async function renderStorage(session) {
@@ -148,10 +157,21 @@ function openLogDrawer(title, lines) {
 }
 
 async function init() {
-  if (!isAdminRoute) return;
+  if (!isAdminRoute && !isLoginRoute) return;
   document.querySelector(".hub-shell").hidden = true;
   const session = await api("/api/auth/session").catch(() => ({ authenticated: false }));
-  if (!session.authenticated) return renderLogin();
+  if (isLoginRoute) {
+    if (!session.authenticated) return renderLogin();
+    window.location.assign(session.role === "administrator" ? "/admin" : "/");
+    return;
+  }
+  if (!session.authenticated) return renderLogin("Sign in is required to access administration.");
+  csrfToken = session.csrfToken || "";
+  if (session.role !== "administrator") {
+    root.hidden = false;
+    root.innerHTML = `<section class="admin-error-state"><h1>Administrator access required</h1><p>This account can use the Skill Hub but cannot change its configuration.</p><a href="/">Open Skill Hub</a></section>`;
+    return;
+  }
   const route = window.location.pathname;
   const renderers = { "/admin": renderOverview, "/admin/providers": renderProviders, "/admin/skills": renderSkills, "/admin/page-generation": renderPages, "/admin/runs": renderRuns, "/admin/users": renderUsers, "/admin/storage": renderStorage };
   try { await (renderers[route] || renderOverview)(session); } catch (error) { if (error.status === 401) renderLogin(); else { root.hidden = false; root.innerHTML = `<section class="admin-error-state"><h1>Management data is unavailable</h1><p>Refresh after the service is available.</p></section>`; } }

@@ -38,7 +38,8 @@ describe("administrator authentication", () => {
       const firstCookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
       expect(firstCookie).toBeTypeOf("string");
       const cookie = firstCookie!.split(";")[0];
-      expect(cookie).toContain("skill_hub_admin=");
+      const csrfToken = login.json().csrfToken as string;
+      expect(cookie).toContain("skill_hub_session=");
 
       const overview = await app.inject({ method: "GET", url: "/api/admin/overview", headers: { cookie } });
       expect(overview.statusCode).toBe(200);
@@ -47,7 +48,7 @@ describe("administrator authentication", () => {
 
       const cleanupPreview = await app.inject({ method: "GET", url: "/api/admin/storage/cleanup/preview", headers: { cookie } });
       expect(cleanupPreview.statusCode).toBe(200);
-      const cleanupWithoutConfirmation = await app.inject({ method: "POST", url: "/api/admin/storage/cleanup", headers: { cookie }, payload: {} });
+      const cleanupWithoutConfirmation = await app.inject({ method: "POST", url: "/api/admin/storage/cleanup", headers: { cookie, "x-csrf-token": csrfToken }, payload: {} });
       expect(cleanupWithoutConfirmation.statusCode).toBe(409);
       const diagnostics = await app.inject({ method: "GET", url: "/api/admin/diagnostics", headers: { cookie } });
       expect(diagnostics.statusCode).toBe(200);

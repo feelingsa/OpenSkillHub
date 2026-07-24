@@ -12,10 +12,12 @@ HUB_ADMIN_PASSWORD=use-a-unique-password-with-at-least-12-characters
 HUB_SESSION_TTL_MS=86400000
 ```
 
-会话令牌为随机值，浏览器只收到 HttpOnly、SameSite=Lax cookie；数据库只保存令牌的 SHA-256 哈希。部署到局域网前必须替换默认密码 `change-me-before-lan-use`。
+会话令牌为随机值，浏览器只收到 HttpOnly、SameSite=Lax cookie；数据库只保存令牌的 SHA-256 哈希。部署到局域网前必须替换默认密码 `change-me-before-lan-use`。通过 HTTPS 反向代理发布时设置 `HUB_COOKIE_SECURE=true`，让浏览器只在 HTTPS 请求中携带会话 cookie。
 
 ## 当前范围
 
-- 单个由 `.env` 配置的 bootstrap 管理员。
-- 管理员可以检查 OpenCode 状态、扫描和启停 Skill、生成或切换页面版本、终止运行并查看存储摘要。
-- 多用户账户、普通用户隔离、审计和产物保留/清理策略属于 M6，尚未实现。
+- 首次启动将 `.env` 中的 bootstrap 管理员安全写入数据库；管理员可在 `/admin/users` 创建、禁用和调整普通用户或其他管理员。
+- 密码使用随机盐的 `scrypt-v1` 哈希保存。禁用账户或重设密码会撤销该用户的现有会话，系统拒绝禁用或降级最后一个启用状态的管理员。
+- 普通用户只能访问自己的运行、事件、上传和产物。管理员接口始终在服务端执行 RBAC。
+- `/admin` 首页显示近期审计记录；登录、用户管理、扫描、页面生成、运行、权限回复、上传、产物预览/下载和存储维护都会写入审计表。
+- 运行额度、登录和接口速率、上传大小以及会话有效期均通过 `.env` 配置。详细局域网发布步骤见 `docs/lan-deployment.md`。

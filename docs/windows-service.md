@@ -19,6 +19,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 Restart-Service SkillWebHub
 ```
 
+生产局域网发布建议由 Caddy 提供 HTTPS，并将 Hub 改为 `HUB_HOST=127.0.0.1`、`HUB_COOKIE_SECURE=true`。防火墙、内部 DNS 和 Caddy 配置见 `docs/lan-deployment.md`。
+
 卸载服务：
 
 ```powershell

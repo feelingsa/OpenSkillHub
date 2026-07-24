@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import type { ArtifactService } from "../artifacts/service.js";
+import type { UploadService } from "../uploads/service.js";
 import type { HubConfig } from "../config.js";
 import type { OpenCodeProvider, OpenCodeRunHandle, OpenCodeServerEvent } from "../providers/opencode/provider.js";
 import { HubDatabase } from "../storage/database.js";
@@ -22,6 +23,13 @@ export class RunValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "RunValidationError";
+  }
+}
+
+export class RunQuotaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RunQuotaError";
   }
 }
 
@@ -74,10 +82,12 @@ export function validateRunInputs(manifest: SkillManifest, body: unknown): RunIn
   return validated;
 }
 
-export function buildRunPrompt(manifest: SkillManifest, inputs: RunInputValues): string {
+export function buildRunPrompt(manifest: SkillManifest, inputs: RunInputValues, stagedFiles = new Map<string, string>()): string {
   const inputLines = manifest.inputs
     .filter((input) => inputs[input.id] !== undefined)
-    .map((input) => `- ${input.label}: ${String(inputs[input.id])}`);
+    .map((input) => input.kind === "file"
+      ? `- ${input.label}: user-uploaded file staged at ${stagedFiles.get(input.id) ?? "an unavailable upload"}`
+      : `- ${input.label}: ${String(inputs[input.id])}`);
   const workflow = manifest.workflow.map((step) => `- ${step.label}${step.description ? `: ${step.description}` : ""}`);
   return [
     `Execute the OpenCode skill \"${manifest.name}\" for the user.`,
@@ -100,19 +110,36 @@ export class RunService {
     private readonly database: HubDatabase,
     private readonly provider: RunProvider,
     private readonly artifacts?: ArtifactService,
+    private readonly uploads?: UploadService,
   ) {}
 
-  async start(manifest: SkillManifest, rawInputs: unknown): Promise<RunRecord> {
+  async start(manifest: SkillManifest, rawInputs: unknown, ownerId = localOwnerId): Promise<RunRecord> {
     const inputValues = validateRunInputs(manifest, rawInputs);
+    const maxConcurrent = this.config.maxConcurrentRunsPerUser;
+    if (maxConcurrent !== undefined && this.database.countActiveRunsByOwner(ownerId) >= maxConcurrent) {
+      throw new RunQuotaError(`Concurrent run limit (${maxConcurrent}) reached.`);
+    }
+    const maxDaily = this.config.maxRunsPerUserPerDay;
+    const dayStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    if (maxDaily !== undefined && this.database.countRunsByOwnerSince(ownerId, dayStart) >= maxDaily) {
+      throw new RunQuotaError(`Daily run limit (${maxDaily}) reached.`);
+    }
     const id = randomUUID();
     const now = new Date().toISOString();
     const workspaceId = id;
-    await mkdir(path.join(this.config.projectRoot, "runtime", "runs", workspaceId), { recursive: true });
+    const workspaceDirectory = path.join(this.config.projectRoot, "runtime", "runs", workspaceId);
+    await mkdir(workspaceDirectory, { recursive: true });
+    let stagedFiles = new Map<string, string>();
+    try {
+      stagedFiles = this.uploads ? await this.uploads.stageForRun(manifest, inputValues, ownerId, workspaceDirectory) : stagedFiles;
+    } catch (error) {
+      throw new RunValidationError(error instanceof Error ? error.message : "The selected upload is unavailable.");
+    }
     const run: RunRecord = {
       id,
       skillId: manifest.id,
       provider: manifest.provider,
-      ownerId: localOwnerId,
+      ownerId,
       status: "created",
       inputValues,
       workspaceId,
@@ -127,8 +154,7 @@ export class RunService {
       return await this.fail(id, "OpenCode is offline. The run was not started.");
     }
 
-    const prompt = buildRunPrompt(manifest, inputValues);
-    const workspaceDirectory = path.join(this.config.projectRoot, "runtime", "runs", workspaceId);
+    const prompt = buildRunPrompt(manifest, inputValues, stagedFiles);
     const pendingProviderEvents: OpenCodeServerEvent[] = [];
     let runReadyForEvents = false;
     try {

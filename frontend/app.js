@@ -17,11 +17,16 @@ const skillModalContent = document.getElementById("skillModalContent");
 const skillStartButton = document.getElementById("skillStartButton");
 const skillPage = document.getElementById("skillPage");
 const skillPageContent = document.getElementById("skillPageContent");
+const userSessionActions = document.getElementById("userSessionActions");
+const userSessionName = document.getElementById("userSessionName");
+const adminConsoleLink = document.getElementById("adminConsoleLink");
+const userLogoutButton = document.getElementById("userLogoutButton");
 const motion = createMotionScope(document.body);
 let activeRunStream;
 let activeGeneratedFrame;
 let activeGeneratedRunId = "";
 let activeGeneratedRunStatus = "idle";
+let csrfToken = "";
 
 const state = {
   allSkills: [],
@@ -32,6 +37,24 @@ const state = {
   liftedCardIndex: null,
   wheelLocked: false,
 };
+
+function authenticatedFetch(url, options = {}) {
+  const method = options.method || "GET";
+  const headers = { ...(options.headers || {}) };
+  if (!headers["Content-Type"] && options.body) headers["Content-Type"] = "application/json";
+  if (!['GET', 'HEAD'].includes(method) && csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  return fetch(url, { ...options, headers });
+}
+
+function showUserSession(session) {
+  userSessionActions.hidden = false;
+  userSessionName.textContent = session.username;
+  adminConsoleLink.hidden = session.role !== "administrator";
+  userLogoutButton.onclick = async () => {
+    await authenticatedFetch("/api/auth/logout", { method: "POST" });
+    window.location.assign("/login");
+  };
+}
 
 document.documentElement.dataset.gsapReady = "true";
 window.addEventListener("pagehide", () => {
@@ -183,9 +206,20 @@ function renderInputField(input) {
     const options = (input.options || []).map((option) => `<option value="${escapeHtml(option.value)}"${input.defaultValue === option.value ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
     return `<label class="skill-run-field"><span>${escapeHtml(input.label)}${input.required ? " *" : ""}</span><select name="${escapeHtml(input.id)}"${required}>${options}</select>${description}</label>`;
   }
-  const type = input.kind === "number" ? "number" : input.kind === "url" ? "url" : "text";
-  const fileHint = input.kind === "file" ? "请输入已上传文件的 ID（上传功能将在产物阶段接入）" : "";
-  return `<label class="skill-run-field"><span>${escapeHtml(input.label)}${input.required ? " *" : ""}</span><input name="${escapeHtml(input.id)}" type="${type}"${input.defaultValue !== undefined ? ` value="${escapeHtml(String(input.defaultValue))}"` : ""}${fileHint ? ` placeholder="${fileHint}"` : ""}${required} />${description}</label>`;
+  const type = input.kind === "file" ? "file" : input.kind === "number" ? "number" : input.kind === "url" ? "url" : "text";
+  return `<label class="skill-run-field"><span>${escapeHtml(input.label)}${input.required ? " *" : ""}</span><input name="${escapeHtml(input.id)}" type="${type}"${input.kind === "file" ? "" : input.defaultValue !== undefined ? ` value="${escapeHtml(String(input.defaultValue))}"` : ""}${required} />${description}</label>`;
+}
+
+async function uploadInputFile(file) {
+  if (!(file instanceof File)) throw new Error("请选择一个要上传的文件。");
+  const response = await authenticatedFetch("/api/uploads", {
+    method: "POST",
+    headers: { "Content-Type": file.type || "application/octet-stream", "X-Upload-Name": file.name },
+    body: file,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.message || payload.error || "文件上传失败。");
+  return payload.id;
 }
 
 function updateRunPanel(run) {
@@ -293,7 +327,7 @@ async function replyToPendingInteraction(event) {
   const endpoint = isQuestion
     ? `/api/runs/${encodeURIComponent(runId)}/questions/${encodeURIComponent(requestId)}/reply`
     : `/api/runs/${encodeURIComponent(runId)}/permissions/${encodeURIComponent(requestId)}/reply`;
-  const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const response = await authenticatedFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     const summary = document.getElementById("runSummary");
@@ -338,12 +372,17 @@ function bindRunForm(skill) {
     for (const input of skill.inputs || []) {
       const field = form.elements.namedItem(input.id);
       if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) continue;
-      values[input.id] = input.kind === "boolean" ? field.checked : field.value;
+      if (input.kind === "file") {
+        values[input.id] = field instanceof HTMLInputElement && field.files?.[0] ? await uploadInputFile(field.files[0]) : "";
+      } else {
+        values[input.id] = input.kind === "boolean" ? field.checked : field.value;
+      }
     }
     const submit = form.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
-      const response = await fetch("/api/runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ skillId: skill.id, inputs: values }) });
+      if (skill.highRisk && !window.confirm("此 Skill 可能执行高风险操作。确认继续本次运行？")) return;
+      const response = await authenticatedFetch("/api/runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ skillId: skill.id, inputs: values, confirmHighRisk: skill.highRisk === true }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
       document.getElementById("runEvents").replaceChildren();
@@ -360,7 +399,7 @@ function bindRunForm(skill) {
   abort?.addEventListener("click", async () => {
     const runId = abort.dataset.runId;
     if (!runId) return;
-    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/abort`, { method: "POST" });
+    const response = await authenticatedFetch(`/api/runs/${encodeURIComponent(runId)}/abort`, { method: "POST" });
     if (response.ok) updateRunPanel(await response.json());
   });
   document.getElementById("runInteraction")?.addEventListener("submit", (event) => {
@@ -376,13 +415,14 @@ function postToGeneratedFrame(type, payload = {}) {
   activeGeneratedFrame?.contentWindow?.postMessage({ channel: "skill-web-hub-runtime", type, ...payload }, "*");
 }
 
-function normalizeGeneratedInputs(skill, rawInputs) {
+async function normalizeGeneratedInputs(skill, rawInputs) {
   const submitted = rawInputs && typeof rawInputs === "object" && !Array.isArray(rawInputs) ? rawInputs : {};
   const inputs = {};
   for (const input of skill.inputs || []) {
     const value = submitted[input.id];
     if (input.kind === "boolean") inputs[input.id] = value === true;
     else if (input.kind === "number") inputs[input.id] = typeof value === "number" ? value : Number(value);
+    else if (input.kind === "file") inputs[input.id] = value instanceof File ? await uploadInputFile(value) : String(value ?? "");
     else if (value !== undefined) inputs[input.id] = String(value);
   }
   return inputs;
@@ -420,10 +460,11 @@ async function startGeneratedRun(skill, rawInputs) {
     return;
   }
   try {
-    const response = await fetch("/api/runs", {
+    if (skill.highRisk && !window.confirm("此 Skill 可能执行高风险操作。确认继续本次运行？")) return;
+    const response = await authenticatedFetch("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ skillId: skill.id, inputs: normalizeGeneratedInputs(skill, rawInputs) }),
+      body: JSON.stringify({ skillId: skill.id, inputs: await normalizeGeneratedInputs(skill, rawInputs), confirmHighRisk: skill.highRisk === true }),
     });
     const run = await response.json();
     if (!response.ok) throw new Error(run.message || run.error || `HTTP ${response.status}`);
@@ -445,7 +486,7 @@ async function replyFromGeneratedRun(payload) {
     : `/api/runs/${encodeURIComponent(runId)}/permissions/${encodeURIComponent(requestId)}/reply`;
   const body = payload.kind === "question" ? { answers: payload.answers } : { reply: payload.reply };
   try {
-    const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const response = await authenticatedFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const run = await response.json();
     if (!response.ok) throw new Error(run.message || run.error || `HTTP ${response.status}`);
     activeGeneratedRunStatus = run.status;
@@ -572,7 +613,7 @@ function applyFilters() {
 }
 
 async function requestJson(url) {
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await authenticatedFetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -625,6 +666,18 @@ function bindControls() {
 
 async function init() {
   if (window.location.pathname === "/login" || window.location.pathname.startsWith("/admin")) return;
+  try {
+    const session = await requestJson("/api/auth/session");
+    if (!session.authenticated) {
+      window.location.assign("/login");
+      return;
+    }
+    csrfToken = session.csrfToken || "";
+    showUserSession(session);
+  } catch {
+    window.location.assign("/login");
+    return;
+  }
   if (window.location.pathname === "/runs") {
     await renderRunsHistoryPage();
     return;
@@ -655,7 +708,7 @@ window.addEventListener("message", (event) => {
   void requestJson(`/api/skills/${encodeURIComponent(routeMatch[1])}`).then((skill) => {
     if (payload.type === "run.start") return startGeneratedRun(skill, payload.inputs);
     if (payload.type === "run.abort" && payload.runId === activeGeneratedRunId) {
-      return fetch(`/api/runs/${encodeURIComponent(payload.runId)}/abort`, { method: "POST" })
+      return authenticatedFetch(`/api/runs/${encodeURIComponent(payload.runId)}/abort`, { method: "POST" })
         .then((response) => response.ok ? response.json() : Promise.reject(new Error("无法终止运行。")))
         .then((run) => {
           activeGeneratedRunStatus = run.status;

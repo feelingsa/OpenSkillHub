@@ -70,6 +70,7 @@ button {
 .admin-toolbar { display: flex; align-items: center; gap: 10px; }.admin-toolbar input { min-width: 10rem; padding: 8px 10px; border: 1px solid var(--hub-color-border); border-radius: var(--hub-radius-sm); background: #080a0e; color: #fff; }.admin-toolbar label { display: flex; align-items: center; gap: 8px; color: var(--hub-color-text-secondary); font-size: 13px; }.admin-link-button { display: inline-block; text-decoration: none; }.admin-loading { color: var(--hub-color-text-secondary); }.admin-drawer-backdrop { position: fixed; inset: 0; z-index: 30; display: flex; justify-content: flex-end; background: rgb(0 0 0 / 58%); }.admin-drawer { width: min(520px, 42vw); height: 100%; overflow: auto; padding: 30px; border-left: 1px solid var(--hub-color-border); background: #0d1219; box-shadow: -20px 0 42px rgb(0 0 0 / 35%); }.admin-drawer h3 { margin: 28px 0 10px; font-size: 14px; }.admin-drawer ul, .admin-drawer ol { padding-left: 20px; color: var(--hub-color-text-secondary); }.admin-drawer li { margin: 10px 0; }.admin-drawer li strong { color: var(--hub-color-text-primary); }
 .admin-log { max-height: 300px; overflow: auto; margin: 18px 0 0; padding: 14px; border: 1px solid var(--hub-color-border); background: #080a0e; color: var(--hub-color-text-secondary); font: 12px/1.5 var(--hub-font-mono); white-space: pre-wrap; }
 .admin-preset { max-width: 6.8rem; padding: 6px; border: 1px solid var(--hub-color-border); border-radius: var(--hub-radius-sm); background: #080a0e; color: var(--hub-color-text-primary); font-size: 12px; }
+.admin-user-form { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1fr) minmax(8rem, .6fr) auto; gap: 12px; align-items: end; }.admin-user-form label { display: grid; gap: 7px; color: var(--hub-color-text-secondary); font-size: 13px; }.admin-user-form input, .admin-user-form select { padding: 9px; border: 1px solid var(--hub-color-border); border-radius: var(--hub-radius-sm); background: #080a0e; color: var(--hub-color-text-primary); }
 
 .hub-shell {
   display: grid;
@@ -141,6 +142,8 @@ h1 {
   border-color: rgba(255, 82, 82, 0.42);
   color: #ff7373;
 }
+
+.user-session-actions { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font: 0.68rem "Lucida Console", "Courier New", monospace; }.user-session-actions a, .user-session-actions button { border: 1px solid var(--line); border-radius: 2px; padding: 0.34rem 0.5rem; background: transparent; color: #e8e8e1; font: inherit; text-decoration: none; cursor: pointer; }
 
 .catalog-controls {
   display: flex;

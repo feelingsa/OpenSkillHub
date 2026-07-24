@@ -8,7 +8,7 @@ import type { ArtifactRecord, RunRecord } from "../types.js";
 
 const maximumArtifactBytes = 50 * 1024 * 1024;
 const maximumArtifactsPerRun = 200;
-const skippedDirectories = new Set([".git", ".opencode", "node_modules"]);
+const skippedDirectories = new Set([".git", ".opencode", "node_modules", "uploads"]);
 
 const mimeTypes: Record<string, string> = {
   ".csv": "text/csv; charset=utf-8",

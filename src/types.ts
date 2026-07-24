@@ -1,5 +1,21 @@
 export type ProviderId = "opencode";
 
+export type UserRole = "administrator" | "user";
+
+export interface UserRecord {
+  id: string;
+  username: string;
+  role: UserRole;
+  disabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthenticatedUser extends UserRecord {
+  expiresAt: string;
+  csrfToken: string;
+}
+
 export type SkillInputKind = "text" | "number" | "boolean" | "select" | "url" | "file" | "project";
 
 export interface SkillInput {
@@ -108,6 +124,17 @@ export interface ArtifactRecord {
   runId: string;
   ownerId: string;
   relativePath: string;
+  displayName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
+export interface UploadRecord {
+  id: string;
+  ownerId: string;
+  storageName: string;
   displayName: string;
   mimeType: string;
   sizeBytes: number;
