@@ -231,6 +231,35 @@ describe("PageGenerator", () => {
     }
   });
 
+  it("preserves queued pages across restart recovery and only fails an in-flight generation", async () => {
+    const { config, database } = await createContext();
+    const queuedSkill = manifest();
+    const runningSkill = { ...manifest(), id: "opencode--running", name: "running", displayName: "Running" };
+    database.upsertSkill(queuedSkill);
+    database.upsertSkill(runningSkill);
+    const createdAt = new Date().toISOString();
+    database.createGeneratedPage({
+      id: "page-queued", skillId: queuedSkill.id, version: "queued-v1", preset: "form-first", sourceHash: queuedSkill.sourceHash,
+      promptVersion: "skill-page-contract-v1", status: "queued", active: false, createdAt, updatedAt: createdAt,
+    });
+    database.createGeneratedPage({
+      id: "page-running", skillId: runningSkill.id, version: "running-v1", preset: "form-first", sourceHash: runningSkill.sourceHash,
+      promptVersion: "skill-page-contract-v1", status: "generating", active: false, createdAt, updatedAt: createdAt,
+    });
+    const afterRestart = new PageGenerator(config, database, provider());
+    try {
+      afterRestart.recoverInterrupted();
+      expect(afterRestart.getStatus(queuedSkill.id)).toEqual([expect.objectContaining({ status: "queued" })]);
+      expect(afterRestart.getStatus(runningSkill.id)).toEqual([expect.objectContaining({ status: "failed", errorMessage: "Page generation was interrupted by a Node restart." })]);
+
+      afterRestart.resumeQueued();
+      await afterRestart.waitForIdle();
+      expect(afterRestart.getActive(queuedSkill.id)).toMatchObject({ status: "ready", active: true });
+    } finally {
+      database.close();
+    }
+  });
+
   it("fails and pauses the queue when OpenCode never completes a page-generation session", async () => {
     const { config, database } = await createContext({ pageGenerationTimeoutMs: 20 });
     const skill = manifest();

@@ -33,6 +33,7 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     await scanner.sync();
     pages.markStalePromptVersions();
     if (provider.getHealthSnapshot().status !== "healthy") return;
+    pages.resumeQueued();
     for (const skill of database.listSkills()) {
       if (skill.enabled && (skill.pageStatus === "missing" || skill.pageStatus === "stale")) {
         await pages.generate(skill, undefined, { resume: false });

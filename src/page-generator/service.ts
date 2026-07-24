@@ -184,11 +184,19 @@ export class PageGenerator {
   }
 
   recoverInterrupted(): void {
-    for (const page of this.database.listGeneratedPagesByStatus(["queued", "generating"])) {
+    for (const page of this.database.listGeneratedPagesByStatus(["generating"])) {
       this.database.updateGeneratedPage(page.id, { status: "failed", errorMessage: "Page generation was interrupted by a Node restart." });
       this.database.appendGeneratedPageEvent(page.id, "failed", "Page generation was interrupted by a Node restart.");
       this.database.updateSkillPageStatus(page.skillId, this.database.getActiveGeneratedPage(page.skillId) ? "stale" : "missing");
     }
+  }
+
+  resumeQueued(): void {
+    this.paused = false;
+    for (const page of this.database.listGeneratedPagesByStatus(["queued"])) {
+      if (!this.queue.includes(page.id)) this.queue.push(page.id);
+    }
+    void this.drain();
   }
 
   markStalePromptVersions(): number {
