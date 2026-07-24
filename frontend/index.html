@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SKILL WEB HUB</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="hub-shell">
+      <header class="hero-header">
+        <p class="kicker">LOCAL OPENCODE</p>
+        <h1>SKILL WEB HUB</h1>
+        <div id="connectionState" class="connection-state">CONNECTING</div>
+      </header>
+
+      <section class="preview-stage" aria-label="OpenCode skills preview">
+        <div id="skillDeck" class="skill-deck" tabindex="0" aria-label="Mouse wheel switches skill windows"></div>
+      </section>
+
+      <div id="skillModal" class="skill-modal" aria-hidden="true">
+        <article class="skill-modal-window" role="dialog" aria-modal="true" aria-labelledby="skillModalTitle">
+          <div id="skillModalHero" class="skill-modal-hero"></div>
+          <section class="skill-modal-body">
+            <h2 id="skillModalTitle"></h2>
+            <div id="skillModalContent" class="skill-modal-content"></div>
+            <footer class="skill-modal-actions">
+              <button id="skillStartButton" class="skill-start-button" type="button">开始</button>
+            </footer>
+          </section>
+        </article>
+      </div>
+
+    </main>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
