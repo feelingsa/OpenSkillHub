@@ -6,11 +6,21 @@ import { PageGenerator } from "../page-generator/service.js";
 import type { SkillScanner } from "../skills/scanner.js";
 import type { HubDatabase } from "../storage/database.js";
 import { RunService, RunValidationError } from "../runs/service.js";
-import type { GeneratedPagePreset, GeneratedPageRecord, PublicSkillManifest, SkillManifest } from "../types.js";
+import type { ArtifactRecord, GeneratedPagePreset, GeneratedPageRecord, PublicSkillManifest, RunRecord, SkillManifest } from "../types.js";
 
 function toPublicManifest(manifest: SkillManifest): PublicSkillManifest {
   const { sourcePath: _sourcePath, ...publicManifest } = manifest;
   return publicManifest;
+}
+
+function toPublicRun(run: RunRecord) {
+  const { ownerId: _ownerId, workspaceId: _workspaceId, sessionId: _sessionId, ...publicRun } = run;
+  return publicRun;
+}
+
+function toPublicArtifact(artifact: ArtifactRecord) {
+  const { ownerId: _ownerId, relativePath: _relativePath, ...publicArtifact } = artifact;
+  return publicArtifact;
 }
 
 function toPublicGeneratedPage(page: GeneratedPageRecord) {
@@ -120,16 +130,23 @@ export async function registerApiRoutes(
     if (!skill || !skill.enabled) return reply.code(404).send({ error: "SKILL_NOT_FOUND" });
     try {
       const run = await runs.start(skill, body.inputs ?? {});
-      return reply.code(201).send(run);
+      return reply.code(201).send(toPublicRun(run));
     } catch (error) {
       if (error instanceof RunValidationError) return reply.code(400).send({ error: "INVALID_RUN_INPUT", message: error.message });
       throw error;
     }
   });
 
+  app.get("/api/runs", async () => runs.list().map(toPublicRun));
+
   app.get<{ Params: { runId: string } }>("/api/runs/:runId", async (request, reply) => {
     const run = runs.get(request.params.runId);
-    return run ? run : reply.code(404).send({ error: "RUN_NOT_FOUND" });
+    return run ? toPublicRun(run) : reply.code(404).send({ error: "RUN_NOT_FOUND" });
+  });
+
+  app.get<{ Params: { runId: string } }>("/api/runs/:runId/events/history", async (request, reply) => {
+    const run = runs.get(request.params.runId);
+    return run ? runs.listEvents(run.id) : reply.code(404).send({ error: "RUN_NOT_FOUND" });
   });
 
   app.get<{ Params: { runId: string } }>("/api/runs/:runId/events", async (request, reply) => {
@@ -164,12 +181,12 @@ export async function registerApiRoutes(
 
   app.get<{ Params: { runId: string } }>("/api/runs/:runId/artifacts", async (request, reply) => {
     if (!runs.get(request.params.runId)) return reply.code(404).send({ error: "RUN_NOT_FOUND" });
-    return artifacts.list(request.params.runId);
+    return artifacts.list(request.params.runId).map(toPublicArtifact);
   });
 
   app.get<{ Params: { artifactId: string } }>("/api/artifacts/:artifactId/metadata", async (request, reply) => {
     const artifact = artifacts.get(request.params.artifactId);
-    return artifact ?? reply.code(404).send({ error: "ARTIFACT_NOT_FOUND" });
+    return artifact ? toPublicArtifact(artifact) : reply.code(404).send({ error: "ARTIFACT_NOT_FOUND" });
   });
 
   app.get<{ Params: { artifactId: string } }>("/api/artifacts/:artifactId/preview", async (request, reply) => {

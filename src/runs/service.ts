@@ -164,6 +164,10 @@ export class RunService {
     return this.database.getRun(runId);
   }
 
+  list(ownerId = localOwnerId): RunRecord[] {
+    return this.database.listRuns(ownerId);
+  }
+
   listEvents(runId: string, afterSequence = 0): StoredRunEvent[] {
     return this.database.listRunEvents(runId, afterSequence);
   }

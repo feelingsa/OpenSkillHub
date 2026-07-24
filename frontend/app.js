@@ -482,6 +482,44 @@ function renderGeneratedSkillPage(skill, generatedPage) {
   activeGeneratedFrame = document.getElementById("generatedSkillFrame");
 }
 
+function renderRunHistory(runs) {
+  hubShell.hidden = true;
+  skillPage.hidden = false;
+  activeGeneratedFrame = undefined;
+  const rows = runs.map((run) => `<a class="run-history-item" href="/runs/${encodeURIComponent(run.id)}"><strong>${escapeHtml(run.skillId)}</strong><span>${escapeHtml(String(run.status).toUpperCase())}</span><time datetime="${escapeHtml(run.createdAt)}">${escapeHtml(new Date(run.createdAt).toLocaleString("zh-CN"))}</time></a>`).join("");
+  skillPageContent.innerHTML = `<a class="skill-page-back" href="/">返回 Skill 目录</a><h1>运行历史</h1><p>查看当前服务保存的运行状态、事件和可下载产物。</p><section class="run-history-list">${rows || "<p class=\"run-history-empty\">尚无运行记录。</p>"}</section>`;
+}
+
+function renderRunDetail(run, events, artifacts) {
+  hubShell.hidden = true;
+  skillPage.hidden = false;
+  activeGeneratedFrame = undefined;
+  const eventRows = events.map((event) => `<li><strong>${escapeHtml(event.type)}</strong><span>${escapeHtml(event.createdAt)}</span></li>`).join("");
+  skillPageContent.innerHTML = `<a class="skill-page-back" href="/runs">返回运行历史</a><h1>${escapeHtml(run.skillId)}</h1><p>${escapeHtml(String(run.status).toUpperCase())} · ${escapeHtml(run.createdAt)}</p><section class="run-detail-panel"><h2>事件时间线</h2><ol class="run-events">${eventRows || "<li>尚未记录事件。</li>"}</ol></section><section class="run-detail-panel"><h2>运行产物</h2><div id="runArtifacts"></div></section>`;
+  renderRunArtifacts(artifacts);
+}
+
+async function renderRunsHistoryPage() {
+  try {
+    renderRunHistory(await requestJson("/api/runs"));
+  } catch {
+    renderRouteError();
+  }
+}
+
+async function renderRunDetailPage(runId) {
+  try {
+    const [run, events, artifacts] = await Promise.all([
+      requestJson(`/api/runs/${encodeURIComponent(runId)}`),
+      requestJson(`/api/runs/${encodeURIComponent(runId)}/events/history`),
+      requestJson(`/api/runs/${encodeURIComponent(runId)}/artifacts`),
+    ]);
+    renderRunDetail(run, events, artifacts);
+  } catch {
+    renderRouteError();
+  }
+}
+
 async function renderSkillPage(skill) {
   const generatedPage = await requestJson(`/api/skills/${encodeURIComponent(skill.id)}/page`).catch(() => undefined);
   if (generatedPage?.status === "ready" && typeof generatedPage.url === "string") {
@@ -586,6 +624,15 @@ function bindControls() {
 }
 
 async function init() {
+  if (window.location.pathname === "/runs") {
+    await renderRunsHistoryPage();
+    return;
+  }
+  const runRouteMatch = window.location.pathname.match(/^\/runs\/([^/]+)$/);
+  if (runRouteMatch) {
+    await renderRunDetailPage(runRouteMatch[1]);
+    return;
+  }
   const routeMatch = window.location.pathname.match(/^\/skills\/([^/]+)$/);
   if (routeMatch) {
     try {

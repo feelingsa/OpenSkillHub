@@ -155,6 +155,13 @@ export class HubDatabase {
     return row ? this.toRunRecord(row) : undefined;
   }
 
+  listRuns(ownerId: string, limit = 100): RunRecord[] {
+    const rows = this.database.prepare(`
+      SELECT * FROM runs WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?
+    `).all(ownerId, limit) as Record<string, unknown>[];
+    return rows.map((row) => this.toRunRecord(row));
+  }
+
   updateRun(id: string, update: { status: RunStatus; summary?: string; errorMessage?: string; sessionId?: string; completedAt?: string }): RunRecord | undefined {
     const existing = this.getRun(id);
     if (!existing) return undefined;

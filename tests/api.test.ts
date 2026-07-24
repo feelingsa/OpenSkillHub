@@ -211,8 +211,12 @@ describe("HTTP health and configuration status", () => {
     try {
       const created = await app.inject({ method: "POST", url: "/api/runs", payload: { skillId: manifest.id, inputs: { taskText: "Run test" } } });
       expect(created.statusCode).toBe(201);
-      const createdRun = created.json() as { id: string; workspaceId: string };
+      const createdRun = created.json() as { id: string; workspaceId?: string };
       const runId = createdRun.id;
+      expect(createdRun.workspaceId).toBeUndefined();
+      const history = await app.inject({ method: "GET", url: "/api/runs" });
+      expect(history.statusCode).toBe(200);
+      expect(history.json()).toEqual([expect.objectContaining({ id: runId, skillId: manifest.id })]);
 
       const unknownRun = await app.inject({ method: "POST", url: "/api/runs/absent/questions/question_1/reply", payload: { answers: [["yes"]] } });
       expect(unknownRun.statusCode).toBe(404);
@@ -234,13 +238,18 @@ describe("HTTP health and configuration status", () => {
       const answeredPermission = await app.inject({ method: "POST", url: `/api/runs/${runId}/permissions/permission_1/reply`, payload: { reply: "once" } });
       expect(answeredPermission.statusCode).toBe(200);
       expect(replies.permission).toBe(1);
-      await writeFile(path.join(projectRoot, "runtime", "runs", createdRun.workspaceId, "result.txt"), "completed result");
+      await writeFile(path.join(projectRoot, "runtime", "runs", runId, "result.txt"), "completed result");
       emit?.({ type: "session.idle" });
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       const artifactList = await app.inject({ method: "GET", url: `/api/runs/${runId}/artifacts` });
       expect(artifactList.statusCode).toBe(200);
       expect(artifactList.json()).toEqual([expect.objectContaining({ displayName: "result.txt", mimeType: "text/plain; charset=utf-8" })]);
+      expect(artifactList.json()[0]).not.toHaveProperty("ownerId");
+      expect(artifactList.json()[0]).not.toHaveProperty("relativePath");
+      const eventHistory = await app.inject({ method: "GET", url: `/api/runs/${runId}/events/history` });
+      expect(eventHistory.statusCode).toBe(200);
+      expect(eventHistory.json()).toEqual(expect.arrayContaining([expect.objectContaining({ type: "run.created" })]));
       const artifactId = artifactList.json()[0].id as string;
       const preview = await app.inject({ method: "GET", url: `/api/artifacts/${artifactId}/preview` });
       expect(preview.statusCode).toBe(200);

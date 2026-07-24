@@ -528,6 +528,39 @@ h1 {
   line-height: 1.6;
 }
 
+.run-history-list,
+.run-detail-panel {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--hub-color-border, #2a3140);
+  background: var(--hub-color-surface, #090b10);
+}
+
+.run-history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid var(--hub-color-border, #2a3140);
+  color: var(--hub-color-text-primary, #f5f7fb);
+  text-decoration: none;
+}
+
+.run-history-item span,
+.run-history-item time {
+  color: var(--hub-color-text-secondary, #a6b0c1);
+  font: 0.72rem var(--hub-font-mono, monospace);
+}
+
+.run-detail-panel h2 {
+  margin: 0;
+  color: var(--hub-color-text-primary, #f5f7fb);
+  font-size: 1rem;
+}
+
 .skill-run-form,
 .skill-run-panel {
   margin-top: 1.5rem;
