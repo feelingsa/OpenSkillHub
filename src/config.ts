@@ -24,6 +24,10 @@ const envSchema = z.object({
   HUB_PAGE_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(900000).default(120000),
   HUB_PAGE_GENERATION_TEMP_ROOT: z.string().min(1).default(path.join(tmpdir(), "skill-web-hub-page-generation")),
   HUB_PAGE_PROMPT_VERSION: z.string().min(1).default("skill-page-contract-v1"),
+  HUB_ADMIN_USERNAME: z.string().min(1).max(80).default("admin"),
+  // This value deliberately works only for a local first boot. Replace it before LAN use.
+  HUB_ADMIN_PASSWORD: z.string().min(12).default("change-me-before-lan-use"),
+  HUB_SESSION_TTL_MS: z.coerce.number().int().min(60000).max(2592000000).default(86400000),
 });
 
 function parseStringArray(value: string, field: string): string[] {
@@ -54,6 +58,11 @@ export interface HubConfig {
   pageGenerationTimeoutMs?: number;
   pageGenerationWorkspaceRoot?: string;
   pagePromptVersion?: string;
+  admin?: {
+    username: string;
+    password: string;
+    sessionTtlMs: number;
+  };
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   opencode: {
     mode: "connect" | "managed";
@@ -74,7 +83,12 @@ export interface HubConfig {
 
 export function loadConfig(projectRoot: string): HubConfig {
   const envPath = path.join(projectRoot, ".env");
-  if (existsSync(envPath)) process.loadEnvFile(envPath);
+  if (existsSync(envPath)) {
+    // Process environment is the deployment override; .env only supplies local defaults.
+    const explicitEnvironment = { ...process.env };
+    process.loadEnvFile(envPath);
+    Object.assign(process.env, explicitEnvironment);
+  }
 
   const env = envSchema.parse(process.env);
   const requestedRoots = env.OPENCODE_SKILL_ROOTS_JSON
@@ -95,6 +109,11 @@ export function loadConfig(projectRoot: string): HubConfig {
     pageGenerationTimeoutMs: env.HUB_PAGE_GENERATION_TIMEOUT_MS,
     pageGenerationWorkspaceRoot: path.resolve(env.HUB_PAGE_GENERATION_TEMP_ROOT),
     pagePromptVersion: env.HUB_PAGE_PROMPT_VERSION,
+    admin: {
+      username: env.HUB_ADMIN_USERNAME,
+      password: env.HUB_ADMIN_PASSWORD,
+      sessionTtlMs: env.HUB_SESSION_TTL_MS,
+    },
     logLevel: env.HUB_LOG_LEVEL,
     opencode: {
       mode: env.OPENCODE_MODE,

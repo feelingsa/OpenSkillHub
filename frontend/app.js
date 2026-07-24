@@ -624,6 +624,7 @@ function bindControls() {
 }
 
 async function init() {
+  if (window.location.pathname === "/login" || window.location.pathname.startsWith("/admin")) return;
   if (window.location.pathname === "/runs") {
     await renderRunsHistoryPage();
     return;

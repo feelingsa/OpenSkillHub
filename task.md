@@ -49,14 +49,14 @@
 
 ### 管理端页面
 
-- [ ] `/admin`：Node、OpenCode、数据库、扫描器、页面生成队列和运行队列总览。
-- [ ] `/admin/providers`：OpenCode 连接配置、健康检查、启动模式和日志入口。
-- [ ] `/admin/skills`：Skill 扫描、启用/禁用、Manifest、页面版本和失败重试。
-- [ ] `/admin/page-generation`：页面生成队列、提示词预设、版本切换和回滚。
-- [ ] `/admin/runs`：全局运行管理、终止任务、权限请求和审计信息。
-- [ ] `/admin/users`：用户、角色、会话和访问范围管理。
-- [ ] `/admin/storage`：上传、产物、缓存占用和清理策略。
-- [ ] 管理端所有页面和 API 都必须执行服务端 RBAC，不能只依赖前端隐藏菜单。
+- [x] `/admin`：Node、OpenCode、数据库、扫描器、页面生成队列和运行队列总览。
+- [x] `/admin/providers`：OpenCode 连接配置、健康检查、启动模式和日志入口。
+- [x] `/admin/skills`：Skill 扫描、启用/禁用、Manifest、页面版本和失败重试。
+- [x] `/admin/page-generation`：页面生成队列、提示词预设、版本切换和回滚。
+- [x] `/admin/runs`：全局运行管理、终止任务、权限请求和审计信息。
+- [x] `/admin/users`：用户、角色、会话和访问范围管理。
+- [x] `/admin/storage`：上传、产物、缓存占用和清理策略。
+- [x] 管理端所有页面和 API 都必须执行服务端 RBAC，不能只依赖前端隐藏菜单。
 
 ### UI 交付约束
 
@@ -392,12 +392,12 @@ GET /api/artifacts/:artifactId/download
 ## 14. 阶段 10：管理页面和运维能力
 
 - [ ] 按管理端 SVG 还原公共壳层、侧边导航、表格、筛选、抽屉和确认弹窗中明确出现的布局；权限状态按阶段 0 的补充状态定义实现。
-- [ ] 将管理端页面落成独立路由：`/admin`、`/admin/providers`、`/admin/skills`、`/admin/page-generation`、`/admin/runs`、`/admin/users`、`/admin/storage`。
-- [ ] 为每个管理端路由实现加载中、空数据、错误、无权限和离线状态。
+- [x] 将管理端页面落成独立路由：`/admin`、`/admin/providers`、`/admin/skills`、`/admin/page-generation`、`/admin/runs`、`/admin/users`、`/admin/storage`。
+- [x] 为每个管理端路由实现加载中、空数据、错误、无权限和离线状态。
 - [ ] 管理端长列表和队列更新使用轻量 GSAP 状态动画；不得用动画隐藏错误、权限变化或任务状态。
-- [ ] 增加系统状态页：Node、OpenCode、数据库、扫描器、生成队列和运行队列。
-- [ ] 增加 Skill 管理页：启用/禁用、扫描状态、页面版本、提示词预设和最后错误。
-- [ ] 增加运行管理页：运行人、Skill、状态、开始时间、耗时和终止操作。
+- [x] 增加系统状态页：Node、OpenCode、数据库、扫描器、生成队列和运行队列。
+- [x] 增加 Skill 管理页：启用/禁用、扫描状态、页面版本、提示词预设和最后错误。
+- [x] 增加运行管理页：运行人、Skill、状态、开始时间、耗时和终止操作。
 - [ ] 增加存储使用统计和产物清理入口。
 - [ ] 支持导出不含密钥的诊断包。
 - [ ] 提供数据备份和恢复流程，至少覆盖数据库、配置引用和已生成页面。

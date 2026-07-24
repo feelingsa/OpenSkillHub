@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { loadConfig, type HubConfig } from "./config.js";
 import { OpenCodeProvider } from "./providers/opencode/provider.js";
 import { ArtifactService } from "./artifacts/service.js";
+import { AdminAuthService } from "./auth/service.js";
 import { PageGenerator } from "./page-generator/service.js";
 import { registerApiRoutes } from "./routes/api.js";
 import { RunService } from "./runs/service.js";
@@ -27,6 +28,7 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
   const artifacts = new ArtifactService(config, database);
   const runs = new RunService(config, database, provider, artifacts);
   const pages = new PageGenerator(config, database, provider);
+  const auth = new AdminAuthService(config, database);
   let scheduledSync: NodeJS.Timeout | undefined;
 
   const syncSkillsAndQueuePages = async () => {
@@ -69,7 +71,7 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     wildcard: false,
     decorateReply: false,
   });
-  await registerApiRoutes(app, { config, database, provider, scanner, runs, artifacts, pages });
+  await registerApiRoutes(app, { config, database, provider, scanner, runs, artifacts, pages, auth });
 
   for (const route of ["/login", "/runs", "/skills/:skillId", "/runs/:runId", "/admin", "/admin/*"]) {
     app.get(route, async (_request, reply) => reply.sendFile("index.html"));

@@ -90,6 +90,14 @@ export class HubDatabase {
         PRIMARY KEY(page_id, sequence),
         FOREIGN KEY(page_id) REFERENCES generated_pages(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS admin_sessions (
+        token_hash TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx ON admin_sessions(expires_at);
     `);
   }
 
@@ -143,6 +151,58 @@ export class HubDatabase {
     skill.pageStatus = pageStatus;
     this.upsertSkill(skill);
     return skill;
+  }
+
+  setSkillEnabled(id: string, enabled: boolean): SkillManifest | undefined {
+    const skill = this.getSkill(id);
+    if (!skill) return undefined;
+    skill.enabled = enabled;
+    this.upsertSkill(skill);
+    return skill;
+  }
+
+  listAllRuns(limit = 200): RunRecord[] {
+    const rows = this.database.prepare("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?").all(limit) as Record<string, unknown>[];
+    return rows.map((row) => this.toRunRecord(row));
+  }
+
+  listAllGeneratedPages(limit = 500): GeneratedPageRecord[] {
+    const rows = this.database.prepare("SELECT * FROM generated_pages ORDER BY updated_at DESC LIMIT ?").all(limit) as Record<string, unknown>[];
+    return rows.map((row) => this.toGeneratedPageRecord(row));
+  }
+
+  createAdminSession(tokenHash: string, username: string, expiresAt: string): void {
+    const now = new Date().toISOString();
+    this.database.prepare("INSERT INTO admin_sessions (token_hash, username, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)")
+      .run(tokenHash, username, now, expiresAt, now);
+  }
+
+  getAdminSession(tokenHash: string): { username: string; expiresAt: string } | undefined {
+    const row = this.database.prepare("SELECT username, expires_at FROM admin_sessions WHERE token_hash = ?").get(tokenHash) as { username: string; expires_at: string } | undefined;
+    if (!row || Date.parse(row.expires_at) <= Date.now()) {
+      if (row) this.deleteAdminSession(tokenHash);
+      return undefined;
+    }
+    this.database.prepare("UPDATE admin_sessions SET last_seen_at = ? WHERE token_hash = ?").run(new Date().toISOString(), tokenHash);
+    return { username: row.username, expiresAt: row.expires_at };
+  }
+
+  deleteAdminSession(tokenHash: string): void {
+    this.database.prepare("DELETE FROM admin_sessions WHERE token_hash = ?").run(tokenHash);
+  }
+
+  purgeExpiredAdminSessions(): void {
+    this.database.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?").run(new Date().toISOString());
+  }
+
+  getAdminStorageSummary(): { skills: number; runs: number; artifacts: number; generatedPages: number; artifactBytes: number } {
+    const row = this.database.prepare(`SELECT
+      (SELECT COUNT(*) FROM skills WHERE is_deleted = 0) AS skills,
+      (SELECT COUNT(*) FROM runs) AS runs,
+      (SELECT COUNT(*) FROM artifacts) AS artifacts,
+      (SELECT COUNT(*) FROM generated_pages) AS generated_pages,
+      (SELECT COALESCE(SUM(size_bytes), 0) FROM artifacts) AS artifact_bytes`).get() as Record<string, number>;
+    return { skills: row.skills, runs: row.runs, artifacts: row.artifacts, generatedPages: row.generated_pages, artifactBytes: row.artifact_bytes };
   }
 
   createRun(run: RunRecord): void {

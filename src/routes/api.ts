@@ -1,12 +1,19 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { HubConfig } from "../config.js";
 import type { OpenCodeProvider } from "../providers/opencode/provider.js";
 import { ArtifactService, canPreviewArtifact } from "../artifacts/service.js";
 import { PageGenerator } from "../page-generator/service.js";
+import { AdminAuthService } from "../auth/service.js";
 import type { SkillScanner } from "../skills/scanner.js";
 import type { HubDatabase } from "../storage/database.js";
 import { RunService, RunValidationError } from "../runs/service.js";
 import type { ArtifactRecord, GeneratedPagePreset, GeneratedPageRecord, PublicSkillManifest, RunRecord, SkillManifest } from "../types.js";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    adminSession?: { username: string; expiresAt: string };
+  }
+}
 
 function toPublicManifest(manifest: SkillManifest): PublicSkillManifest {
   const { sourcePath: _sourcePath, ...publicManifest } = manifest;
@@ -50,9 +57,32 @@ export async function registerApiRoutes(
     runs: RunService;
     artifacts: ArtifactService;
     pages: PageGenerator;
+    auth?: AdminAuthService;
   },
 ): Promise<void> {
   const { config, database, provider, scanner, runs, artifacts, pages } = options;
+  const auth = options.auth ?? new AdminAuthService(config, database);
+
+  const requireAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
+    const session = auth.getSession(request);
+    if (!session) return reply.code(401).send({ error: "ADMIN_AUTH_REQUIRED" });
+    request.adminSession = session;
+  };
+
+  app.post<{ Body: { username?: unknown; password?: unknown } }>("/api/auth/login", async (request, reply) => {
+    const session = auth.login(request.body?.username, request.body?.password);
+    if (!session) return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
+    auth.setSessionCookie(reply, session.token, session.expiresAt);
+    return { authenticated: true, username: session.username, expiresAt: session.expiresAt };
+  });
+  app.get("/api/auth/session", async (request) => {
+    const session = auth.getSession(request);
+    return session ? { authenticated: true, ...session } : { authenticated: false };
+  });
+  app.post("/api/auth/logout", async (request, reply) => {
+    auth.logout(request, reply);
+    return { authenticated: false };
+  });
 
   app.get("/api/health", async () => ({
     status: "healthy",
@@ -71,6 +101,53 @@ export async function registerApiRoutes(
 
   app.get("/api/providers", async () => [{ ...provider.getHealthSnapshot(), ...provider.getRuntimeInfo() }]);
   app.post("/api/providers/opencode/test", async () => provider.checkHealth());
+
+  app.get("/api/admin/overview", { preHandler: requireAdmin }, async () => {
+    const skills = database.listSkills();
+    const runsList = database.listAllRuns(200);
+    const pagesList = database.listAllGeneratedPages(500);
+    return {
+      provider: provider.getHealthSnapshot(),
+      runtime: { node: process.version, service: "skill-web-hub", scannerIntervalMs: config.skillSyncIntervalMs },
+      storage: database.getAdminStorageSummary(),
+      skills: { total: skills.length, enabled: skills.filter((skill) => skill.enabled).length },
+      pages: { queued: pagesList.filter((page) => page.status === "queued").length, generating: pagesList.filter((page) => page.status === "generating").length, failed: pagesList.filter((page) => page.status === "failed").length },
+      runs: { active: runsList.filter((run) => ["created", "running", "waiting_question", "waiting_permission"].includes(run.status)).length, total: runsList.length },
+    };
+  });
+  app.get("/api/admin/providers", { preHandler: requireAdmin }, async () => [{ ...provider.getHealthSnapshot(), ...provider.getRuntimeInfo() }]);
+  app.post("/api/admin/providers/opencode/test", { preHandler: requireAdmin }, async () => provider.checkHealth());
+  app.get("/api/admin/skills", { preHandler: requireAdmin }, async () => database.listSkills().map(toPublicManifest));
+  app.post("/api/admin/skills/scan", { preHandler: requireAdmin }, async () => scanner.sync());
+  app.post<{ Params: { skillId: string }; Body: { enabled?: unknown } }>("/api/admin/skills/:skillId/enabled", { preHandler: requireAdmin }, async (request, reply) => {
+    if (typeof request.body?.enabled !== "boolean") return reply.code(400).send({ error: "INVALID_ENABLED_VALUE" });
+    const skill = database.setSkillEnabled(request.params.skillId, request.body.enabled);
+    return skill ? toPublicManifest(skill) : reply.code(404).send({ error: "SKILL_NOT_FOUND" });
+  });
+  app.post<{ Params: { skillId: string }; Body: { preset?: unknown; force?: unknown } }>("/api/admin/skills/:skillId/page/generate", { preHandler: requireAdmin }, async (request, reply) => {
+    const skill = database.getSkill(request.params.skillId);
+    if (!skill) return reply.code(404).send({ error: "SKILL_NOT_FOUND" });
+    const preset = request.body?.preset;
+    if (preset !== undefined && preset !== "form-first" && preset !== "workflow-console" && preset !== "artifact-workbench") return reply.code(400).send({ error: "INVALID_PAGE_PRESET" });
+    if (request.body?.force !== undefined && typeof request.body.force !== "boolean") return reply.code(400).send({ error: "INVALID_PAGE_GENERATION_FORCE" });
+    const page = await pages.generate(skill, preset as GeneratedPagePreset | undefined, { force: request.body?.force === true });
+    return reply.code(page.status === "ready" ? 200 : 202).send(toPublicGeneratedPage(page));
+  });
+  app.get("/api/admin/pages", { preHandler: requireAdmin }, async () => database.listAllGeneratedPages().map((page) => ({ skillId: page.skillId, ...toPublicGeneratedPage(page) })));
+  app.post<{ Params: { skillId: string; version: string } }>("/api/admin/pages/:skillId/activate/:version", { preHandler: requireAdmin }, async (request, reply) => {
+    const page = pages.activate(request.params.skillId, request.params.version);
+    return page ? toPublicGeneratedPage(page) : reply.code(404).send({ error: "PAGE_VERSION_NOT_FOUND" });
+  });
+  app.get("/api/admin/runs", { preHandler: requireAdmin }, async () => database.listAllRuns().map(toPublicRun));
+  app.post<{ Params: { runId: string } }>("/api/admin/runs/:runId/abort", { preHandler: requireAdmin }, async (request, reply) => {
+    const run = await runs.abort(request.params.runId, "Run aborted by an administrator.");
+    return run ? toPublicRun(run) : reply.code(404).send({ error: "RUN_NOT_FOUND" });
+  });
+  app.get("/api/admin/users", { preHandler: requireAdmin }, async (request) => ({
+    bootstrapAdministrator: { username: request.adminSession!.username, role: "administrator", source: "environment" },
+    multiUserManagement: "planned-for-m6",
+  }));
+  app.get("/api/admin/storage", { preHandler: requireAdmin }, async () => database.getAdminStorageSummary());
 
   app.post("/api/skills/sync", async () => scanner.sync());
   app.get("/api/skills", async () => database.listSkills().filter((skill) => skill.enabled).map(toPublicManifest));
