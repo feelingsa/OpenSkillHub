@@ -25,8 +25,8 @@ describe("OpenCodeProvider run API", () => {
       for await (const chunk of request) body += chunk;
       requests.push({ method: request.method, url: request.url, body });
       if (request.url === "/session" && request.method === "POST") return void response.end(JSON.stringify({ id: "ses_test" }));
-      if (request.url?.startsWith("/session/ses_test/prompt_async") && request.method === "POST") {
-        response.writeHead(204).end();
+      if (request.url?.startsWith("/session/ses_test/message") && request.method === "POST") {
+        response.end(JSON.stringify({ info: { id: "msg_test" }, parts: [] }));
         eventResponse?.write('data: {"type":"session.next.text.delta","properties":{"sessionID":"ses_test","delta":"READY"}}\n\n');
         return;
       }
@@ -38,14 +38,18 @@ describe("OpenCodeProvider run API", () => {
     if (!address || typeof address === "string") throw new Error("Test server did not listen");
     closeServer = async () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     const provider = new OpenCodeProvider({
-      mode: "connect", url: new URL(`http://127.0.0.1:${address.port}`), command: "opencode", args: [], workingDirectory: process.cwd(), configDirectory: "config", dataDirectory: "data", lockFilePath: "lock", logFilePath: "log", startTimeoutMs: 1000, skillRoots: [],
+      mode: "connect", url: new URL(`http://127.0.0.1:${address.port}`), command: "opencode", args: [], workingDirectory: process.cwd(), configDirectory: "config", dataDirectory: "data", lockFilePath: "lock", logFilePath: "log", startTimeoutMs: 1000, skillRoots: [], model: { providerID: "xingwan", id: "gpt-5.6-terra", variant: "medium" },
     }, { debug() {}, info() {}, warn() {}, error() {} });
     const received: string[] = [];
     const handle = await provider.startRun({ title: "Example", prompt: "Run it", directory: "C:/run", onEvent: (event) => received.push(String(event.properties?.delta ?? "")) });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(handle.sessionId).toBe("ses_test");
-    expect(received).toEqual(["READY"]);
-    expect(requests.some((request) => request.url?.startsWith("/session/ses_test/prompt_async?directory="))).toBe(true);
+    expect(received.filter(Boolean)).toEqual(["READY"]);
+    expect(requests.some((request) => request.url?.startsWith("/session/ses_test/message?directory="))).toBe(true);
+    const sessionRequest = requests.find((request) => request.url === "/session" && request.method === "POST");
+    const promptRequest = requests.find((request) => request.url?.startsWith("/session/ses_test/message") && request.method === "POST");
+    expect(JSON.parse(sessionRequest?.body ?? "{}")).toMatchObject({ model: { providerID: "xingwan", id: "gpt-5.6-terra", variant: "medium" } });
+    expect(JSON.parse(promptRequest?.body ?? "{}")).toMatchObject({ model: { providerID: "xingwan", modelID: "gpt-5.6-terra" }, variant: "medium" });
     await handle.abort();
     await handle.done;
     eventResponse?.end();

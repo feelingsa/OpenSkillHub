@@ -120,9 +120,10 @@ export class SkillScanner {
   async sync(): Promise<ScanSummary> {
     const scannedAt = new Date().toISOString();
     const warnings: string[] = [];
-    let canMarkMissing = this.config.opencode.skillRoots.length > 0 || this.provider.getHealthSnapshot().status === "healthy";
+    let canMarkMissing = this.config.opencode.skillRoots.length > 0
+      || (this.config.opencode.includeApiSkills !== false && this.provider.getHealthSnapshot().status === "healthy");
     const manifests = new Map<string, SkillManifest>();
-    const apiSkills = await this.provider.listSkills();
+    const apiSkills = this.config.opencode.includeApiSkills !== false ? await this.provider.listSkills() : [];
     for (const skill of apiSkills) {
       const manifest = apiManifest(skill, scannedAt);
       manifests.set(manifest.id, manifest);

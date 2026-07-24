@@ -79,6 +79,28 @@ describe("HTTP health and configuration status", () => {
       const status = await app.inject({ method: "GET", url: `/api/skills/${manifest.id}/page/status` });
       expect(status.statusCode).toBe(200);
       expect(status.json()).toHaveLength(1);
+      const firstVersion = status.json()[0].version as string;
+
+      const invalidForce = await app.inject({ method: "POST", url: `/api/skills/${manifest.id}/page/generate`, payload: { force: "yes" } });
+      expect(invalidForce.statusCode).toBe(400);
+      const regenerated = await app.inject({ method: "POST", url: `/api/skills/${manifest.id}/page/generate`, payload: { preset: "form-first", force: true } });
+      expect(regenerated.statusCode).toBe(202);
+      await pages.waitForIdle();
+      const versions = await app.inject({ method: "GET", url: `/api/skills/${manifest.id}/page/status` });
+      expect(versions.json()).toHaveLength(2);
+      const newestVersion = versions.json().find((page: { active: boolean }) => page.active).version as string;
+      expect(newestVersion).not.toBe(firstVersion);
+
+      const rolledBack = await app.inject({ method: "POST", url: `/api/skills/${manifest.id}/page/activate/${encodeURIComponent(firstVersion)}` });
+      expect(rolledBack.statusCode).toBe(200);
+      expect(rolledBack.json()).toMatchObject({ version: firstVersion, active: true, status: "ready" });
+      const logs = await app.inject({ method: "GET", url: `/api/skills/${manifest.id}/page/${encodeURIComponent(firstVersion)}/logs` });
+      expect(logs.statusCode).toBe(200);
+      expect(logs.json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "queued" }),
+        expect.objectContaining({ type: "ready" }),
+        expect.objectContaining({ type: "activated" }),
+      ]));
     } finally {
       await app.close();
       database.close();

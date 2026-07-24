@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { ArtifactRecord, GeneratedPageRecord, GeneratedPageStatus, ProviderId, RunEvent, RunInputValues, RunRecord, RunStatus, SkillManifest, StoredRunEvent } from "../types.js";
+import type { ArtifactRecord, GeneratedPageEvent, GeneratedPageRecord, GeneratedPageStatus, ProviderId, RunEvent, RunInputValues, RunRecord, RunStatus, SkillManifest, StoredRunEvent } from "../types.js";
 
 export class HubDatabase {
   private readonly database: Database.Database;
@@ -81,6 +81,15 @@ export class HubDatabase {
       );
       CREATE INDEX IF NOT EXISTS generated_pages_skill_created_idx ON generated_pages(skill_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS generated_pages_skill_active_idx ON generated_pages(skill_id, is_active);
+      CREATE TABLE IF NOT EXISTS generated_page_events (
+        page_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(page_id, sequence),
+        FOREIGN KEY(page_id) REFERENCES generated_pages(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -241,6 +250,22 @@ export class HubDatabase {
     });
   }
 
+  appendGeneratedPageEvent(pageId: string, type: string, message: string): GeneratedPageEvent {
+    const row = this.database.prepare("SELECT COALESCE(MAX(sequence), 0) AS latest FROM generated_page_events WHERE page_id = ?").get(pageId) as { latest: number };
+    const sequence = row.latest + 1;
+    const createdAt = new Date().toISOString();
+    this.database.prepare("INSERT INTO generated_page_events (page_id, sequence, type, message, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(pageId, sequence, type.slice(0, 100), message.slice(0, 500), createdAt);
+    return { pageId, sequence, type: type.slice(0, 100), message: message.slice(0, 500), createdAt };
+  }
+
+  listGeneratedPageEvents(pageId: string): GeneratedPageEvent[] {
+    const rows = this.database.prepare(`
+      SELECT sequence, type, message, created_at FROM generated_page_events WHERE page_id = ? ORDER BY sequence ASC
+    `).all(pageId) as Array<{ sequence: number; type: string; message: string; created_at: string }>;
+    return rows.map((row) => ({ pageId, sequence: row.sequence, type: row.type, message: row.message, createdAt: row.created_at }));
+  }
+
   getGeneratedPage(id: string): GeneratedPageRecord | undefined {
     const row = this.database.prepare("SELECT * FROM generated_pages WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? this.toGeneratedPageRecord(row) : undefined;
@@ -272,7 +297,10 @@ export class HubDatabase {
     return row ? this.toGeneratedPageRecord(row) : undefined;
   }
 
-  updateGeneratedPage(id: string, update: Partial<Pick<GeneratedPageRecord, "status" | "outputDirectory" | "sessionId" | "viewManifest" | "errorMessage">>): GeneratedPageRecord | undefined {
+  updateGeneratedPage(
+    id: string,
+    update: Partial<Pick<GeneratedPageRecord, "status" | "outputDirectory" | "sessionId" | "viewManifest">> & { errorMessage?: string | null },
+  ): GeneratedPageRecord | undefined {
     const existing = this.getGeneratedPage(id);
     if (!existing) return undefined;
     const updatedAt = new Date().toISOString();
@@ -286,7 +314,7 @@ export class HubDatabase {
       outputDirectory: update.outputDirectory ?? existing.outputDirectory ?? null,
       sessionId: update.sessionId ?? existing.sessionId ?? null,
       viewManifestJson: update.viewManifest ? JSON.stringify(update.viewManifest) : existing.viewManifest ? JSON.stringify(existing.viewManifest) : null,
-      errorMessage: update.errorMessage ?? existing.errorMessage ?? null,
+      errorMessage: update.errorMessage === undefined ? existing.errorMessage ?? null : update.errorMessage,
       updatedAt,
     });
     return this.getGeneratedPage(id);

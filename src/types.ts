@@ -141,3 +141,11 @@ export interface GeneratedPageRecord {
   updatedAt: string;
   activatedAt?: string;
 }
+
+export interface GeneratedPageEvent {
+  pageId: string;
+  sequence: number;
+  type: string;
+  message: string;
+  createdAt: string;
+}

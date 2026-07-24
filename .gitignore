@@ -9,3 +9,5 @@ data/*.db
 data/*.db-*
 runtime/
 frontend/generated/.cache/
+frontend/generated/*
+!frontend/generated/.gitkeep

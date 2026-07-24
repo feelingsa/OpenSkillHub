@@ -92,14 +92,17 @@ export async function registerApiRoutes(
     };
   });
 
-  app.post<{ Params: { skillId: string }; Body: { preset?: unknown } }>("/api/skills/:skillId/page/generate", async (request, reply) => {
+  app.post<{ Params: { skillId: string }; Body: { preset?: unknown; force?: unknown } }>("/api/skills/:skillId/page/generate", async (request, reply) => {
     const skill = database.getSkill(request.params.skillId);
     if (!skill || !skill.enabled) return reply.code(404).send({ error: "SKILL_NOT_FOUND" });
     const preset = request.body?.preset;
     if (preset !== undefined && preset !== "form-first" && preset !== "workflow-console" && preset !== "artifact-workbench") {
       return reply.code(400).send({ error: "INVALID_PAGE_PRESET" });
     }
-    const page = await pages.generate(skill, preset as GeneratedPagePreset | undefined);
+    if (request.body?.force !== undefined && typeof request.body.force !== "boolean") {
+      return reply.code(400).send({ error: "INVALID_PAGE_GENERATION_FORCE" });
+    }
+    const page = await pages.generate(skill, preset as GeneratedPagePreset | undefined, { force: request.body?.force === true });
     return reply.code(page.status === "ready" ? 200 : 202).send(toPublicGeneratedPage(page));
   });
 
@@ -107,6 +110,13 @@ export async function registerApiRoutes(
     const skill = database.getSkill(request.params.skillId);
     if (!skill || !skill.enabled) return reply.code(404).send({ error: "SKILL_NOT_FOUND" });
     return pages.getStatus(skill.id).map(toPublicGeneratedPage);
+  });
+
+  app.get<{ Params: { skillId: string; version: string } }>("/api/skills/:skillId/page/:version/logs", async (request, reply) => {
+    const skill = database.getSkill(request.params.skillId);
+    if (!skill || !skill.enabled) return reply.code(404).send({ error: "SKILL_NOT_FOUND" });
+    const page = pages.getStatus(skill.id).find((candidate) => candidate.version === request.params.version);
+    return page ? database.listGeneratedPageEvents(page.id) : reply.code(404).send({ error: "PAGE_VERSION_NOT_FOUND" });
   });
 
   app.post<{ Params: { skillId: string; version: string } }>("/api/skills/:skillId/page/activate/:version", async (request, reply) => {

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="page">
+      <form data-skill-form>
+        <label>Task<input name="taskText" data-skill-input required></label>
+        <button type="submit">Run</button>
+      </form>
+      <section data-run-status></section>
+      <section data-run-events></section>
+      <section data-run-interaction></section>
+      <section data-run-artifacts></section>
+    </main>
+    <script type="module" src="/runtime/skill-runtime.js"></script>
+  </body>
+</html>

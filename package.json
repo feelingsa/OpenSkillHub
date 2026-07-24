@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:api": "vitest run tests/api.test.ts",
-    "test:browser": "node scripts/check-static-shell.mjs",
+    "test:browser": "node scripts/check-browser.mjs",
+    "validate:real-page": "tsx scripts/validate-real-page-generation.ts",
     "capture:desktop": "node scripts/capture-desktop-baseline.mjs",
     "audit:design": "node scripts/audit-design-sources.mjs"
   },

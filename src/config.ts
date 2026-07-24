@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 
@@ -15,8 +15,15 @@ const envSchema = z.object({
   OPENCODE_WORKING_DIRECTORY: z.string().default("."),
   OPENCODE_START_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   OPENCODE_SKILL_ROOTS_JSON: z.string().optional(),
+  OPENCODE_API_SKILL_DISCOVERY: z.enum(["true", "false"]).default("true"),
+  OPENCODE_MODEL_PROVIDER: z.string().min(1).optional(),
+  OPENCODE_MODEL_ID: z.string().min(1).optional(),
+  OPENCODE_MODEL_VARIANT: z.string().min(1).optional(),
   SKILL_SYNC_INTERVAL_MS: z.coerce.number().int().min(10000).max(86400000).default(300000),
   HUB_RUN_TIMEOUT_MS: z.coerce.number().int().min(10000).max(86400000).default(900000),
+  HUB_PAGE_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(900000).default(120000),
+  HUB_PAGE_GENERATION_TEMP_ROOT: z.string().min(1).default(path.join(tmpdir(), "skill-web-hub-page-generation")),
+  HUB_PAGE_PROMPT_VERSION: z.string().min(1).default("skill-page-contract-v1"),
 });
 
 function parseStringArray(value: string, field: string): string[] {
@@ -44,6 +51,9 @@ export interface HubConfig {
   databasePath: string;
   skillSyncIntervalMs: number;
   runTimeoutMs: number;
+  pageGenerationTimeoutMs?: number;
+  pageGenerationWorkspaceRoot?: string;
+  pagePromptVersion?: string;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   opencode: {
     mode: "connect" | "managed";
@@ -57,6 +67,8 @@ export interface HubConfig {
     logFilePath: string;
     startTimeoutMs: number;
     skillRoots: string[];
+    includeApiSkills?: boolean;
+    model?: { providerID: string; id: string; variant?: string };
   };
 }
 
@@ -69,6 +81,9 @@ export function loadConfig(projectRoot: string): HubConfig {
     ? parseStringArray(env.OPENCODE_SKILL_ROOTS_JSON, "OPENCODE_SKILL_ROOTS_JSON")
     : defaultSkillRoots();
   const skillRoots = requestedRoots.map((root) => path.resolve(projectRoot, root));
+  if (Boolean(env.OPENCODE_MODEL_PROVIDER) !== Boolean(env.OPENCODE_MODEL_ID)) {
+    throw new Error("OPENCODE_MODEL_PROVIDER and OPENCODE_MODEL_ID must be set together");
+  }
 
   return {
     projectRoot,
@@ -77,6 +92,9 @@ export function loadConfig(projectRoot: string): HubConfig {
     databasePath: path.resolve(projectRoot, env.HUB_DATA_PATH),
     skillSyncIntervalMs: env.SKILL_SYNC_INTERVAL_MS,
     runTimeoutMs: env.HUB_RUN_TIMEOUT_MS,
+    pageGenerationTimeoutMs: env.HUB_PAGE_GENERATION_TIMEOUT_MS,
+    pageGenerationWorkspaceRoot: path.resolve(env.HUB_PAGE_GENERATION_TEMP_ROOT),
+    pagePromptVersion: env.HUB_PAGE_PROMPT_VERSION,
     logLevel: env.HUB_LOG_LEVEL,
     opencode: {
       mode: env.OPENCODE_MODE,
@@ -90,6 +108,10 @@ export function loadConfig(projectRoot: string): HubConfig {
       logFilePath: path.join(projectRoot, "runtime", "logs", "opencode.log"),
       startTimeoutMs: env.OPENCODE_START_TIMEOUT_MS,
       skillRoots,
+      includeApiSkills: env.OPENCODE_API_SKILL_DISCOVERY === "true",
+      model: env.OPENCODE_MODEL_PROVIDER && env.OPENCODE_MODEL_ID
+        ? { providerID: env.OPENCODE_MODEL_PROVIDER, id: env.OPENCODE_MODEL_ID, ...(env.OPENCODE_MODEL_VARIANT ? { variant: env.OPENCODE_MODEL_VARIANT } : {}) }
+        : undefined,
     },
   };
 }

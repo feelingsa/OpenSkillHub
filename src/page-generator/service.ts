@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { copyFile, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
@@ -9,7 +10,7 @@ import type { OpenCodeRunHandle, OpenCodeServerEvent } from "../providers/openco
 import { HubDatabase } from "../storage/database.js";
 import type { GeneratedPagePreset, GeneratedPageRecord, SkillManifest } from "../types.js";
 
-const promptVersion = "skill-page-contract-v1";
+const defaultPromptVersion = "skill-page-contract-v1";
 const maximumGeneratedFileBytes = 250 * 1024;
 const outputFiles = ["index.html", "styles.css", "view.manifest.json"] as const;
 const optionalOutputFiles = ["view.js"] as const;
@@ -58,6 +59,10 @@ function assertGeneratedTextIsSafe(filename: string, value: string): void {
   if (/\b(?:https?:|file:|javascript:)\/\//i.test(value)) throw new Error(`${filename} references an external or local URL`);
   if (/[a-zA-Z]:[\\/]/.test(value)) throw new Error(`${filename} contains an absolute local path`);
   if (/\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/.test(value)) throw new Error(`${filename} bypasses the shared runtime`);
+  if (/\b(?:api[_-]?key|secret|access[_-]?token|password)\s*[:=]\s*["'][^"']+/i.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/i.test(value)) {
+    throw new Error(`${filename} contains a credential-like value`);
+  }
+  if (/\b(?:window\.)?location\s*(?:=|\.\s*(?:assign|replace)\s*\()/i.test(value)) throw new Error(`${filename} contains a client-side redirect`);
 }
 
 function assertGeneratedHtmlIsSafe(html: string): void {
@@ -123,13 +128,14 @@ export class PageGenerator {
     private readonly provider: PageGenerationProvider,
   ) {}
 
-  async generate(manifest: SkillManifest, requestedPreset?: GeneratedPagePreset, options: { resume?: boolean } = {}): Promise<GeneratedPageRecord> {
+  async generate(manifest: SkillManifest, requestedPreset?: GeneratedPagePreset, options: { resume?: boolean; force?: boolean } = {}): Promise<GeneratedPageRecord> {
     if (options.resume !== false) {
       this.paused = false;
       void this.drain();
     }
     const preset = requestedPreset ?? choosePreset(manifest);
-    const reusable = this.database.findReusableGeneratedPage(manifest.id, manifest.sourceHash, promptVersion);
+    const promptVersion = this.currentPromptVersion();
+    const reusable = options.force ? undefined : this.database.findReusableGeneratedPage(manifest.id, manifest.sourceHash, promptVersion);
     if (reusable) {
       const active = this.database.activateGeneratedPage(manifest.id, reusable.version) ?? reusable;
       this.database.updateSkillPageStatus(manifest.id, "ready");
@@ -153,6 +159,7 @@ export class PageGenerator {
       updatedAt: now,
     };
     this.database.createGeneratedPage(page);
+    this.database.appendGeneratedPageEvent(page.id, "queued", "Page generation queued.");
     this.database.updateSkillPageStatus(manifest.id, "queued");
     this.queue.push(page.id);
     void this.drain();
@@ -169,15 +176,32 @@ export class PageGenerator {
 
   activate(skillId: string, version: string): GeneratedPageRecord | undefined {
     const page = this.database.activateGeneratedPage(skillId, version);
-    if (page) this.database.updateSkillPageStatus(skillId, "ready");
+    if (page) {
+      this.database.appendGeneratedPageEvent(page.id, "activated", "This version was activated.");
+      this.database.updateSkillPageStatus(skillId, "ready");
+    }
     return page;
   }
 
   recoverInterrupted(): void {
     for (const page of this.database.listGeneratedPagesByStatus(["queued", "generating"])) {
       this.database.updateGeneratedPage(page.id, { status: "failed", errorMessage: "Page generation was interrupted by a Node restart." });
+      this.database.appendGeneratedPageEvent(page.id, "failed", "Page generation was interrupted by a Node restart.");
       this.database.updateSkillPageStatus(page.skillId, this.database.getActiveGeneratedPage(page.skillId) ? "stale" : "missing");
     }
+  }
+
+  markStalePromptVersions(): number {
+    const promptVersion = this.currentPromptVersion();
+    let staleCount = 0;
+    for (const skill of this.database.listSkills()) {
+      const active = this.database.getActiveGeneratedPage(skill.id);
+      if (active && active.promptVersion !== promptVersion) {
+        this.database.updateSkillPageStatus(skill.id, "stale");
+        staleCount += 1;
+      }
+    }
+    return staleCount;
   }
 
   async waitForIdle(): Promise<void> {
@@ -211,9 +235,12 @@ export class PageGenerator {
     }
 
     this.database.updateGeneratedPage(page.id, { status: "generating" });
+    this.database.appendGeneratedPageEvent(page.id, "started", "Page generation started.");
     this.database.updateSkillPageStatus(manifest.id, "generating");
-    const workspace = path.join(this.config.projectRoot, "runtime", "page-generation", page.id);
-    await mkdir(workspace, { recursive: true });
+    const workspaceRoot = this.config.pageGenerationWorkspaceRoot ?? path.join(tmpdir(), "skill-web-hub-page-generation");
+    await mkdir(workspaceRoot, { recursive: true });
+    // OpenCode writes only in this disposable system-temp workspace. Node validates then persists approved files.
+    const workspace = await mkdtemp(path.join(workspaceRoot, "page-"));
     let handle: OpenCodeRunHandle | undefined;
     let resolveCompletion!: () => void;
     let rejectCompletion!: (error: Error) => void;
@@ -228,6 +255,7 @@ export class PageGenerator {
         pendingEvents.push(event);
         return;
       }
+      this.recordOpenCodeEvent(page.id, event);
       if (event.type === "session.idle") resolveCompletion();
       if (event.type === "session.error") rejectCompletion(new Error("OpenCode reported a page generation error."));
       if (event.type === "question.asked" || event.type === "permission.asked") {
@@ -243,9 +271,13 @@ export class PageGenerator {
         onEvent: receive,
       });
       this.database.updateGeneratedPage(page.id, { status: "generating", sessionId: handle.sessionId });
+      this.database.appendGeneratedPageEvent(page.id, "session.started", "OpenCode generation session started.");
       acceptingEvents = true;
       for (const event of pendingEvents) receive(event);
-      const timeout = setTimeout(() => rejectCompletion(new Error("Page generation timed out.")), this.config.runTimeoutMs);
+      const timeout = setTimeout(
+        () => rejectCompletion(new Error("Page generation timed out.")),
+        this.config.pageGenerationTimeoutMs ?? 120000,
+      );
       try {
         void handle.done.then(() => rejectCompletion(new Error("OpenCode event stream ended before page generation completed."))).catch((error) => rejectCompletion(error instanceof Error ? error : new Error("OpenCode event stream failed.")));
         await completion;
@@ -253,17 +285,21 @@ export class PageGenerator {
         clearTimeout(timeout);
       }
       handle.close();
+      this.database.appendGeneratedPageEvent(page.id, "validating", "Generated files are being validated.");
       const viewManifest = await this.validateOutput(manifest, page, workspace);
       const outputDirectory = await this.persistOutput(page, workspace);
-      const ready = this.database.updateGeneratedPage(page.id, { status: "ready", outputDirectory, viewManifest });
+      const ready = this.database.updateGeneratedPage(page.id, { status: "ready", outputDirectory, viewManifest, errorMessage: null });
       if (!ready) throw new Error("Generated page record disappeared before activation.");
       this.database.activateGeneratedPage(manifest.id, ready.version);
+      this.database.appendGeneratedPageEvent(page.id, "ready", "Generated page validated, persisted, and activated.");
       this.database.updateSkillPageStatus(manifest.id, "ready");
     } catch (error) {
       handle?.close();
       const message = error instanceof Error ? error.message : "Page generation failed.";
       this.markFailed(page, message);
       if (this.isUpstreamFailure(message)) this.paused = true;
+    } finally {
+      await rm(workspace, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -277,6 +313,10 @@ export class PageGenerator {
       .replace("{{preset_instructions}}", presetInstructions)
       .replace("{{runtime_contract}}", runtimeContract())
       .replaceAll("{{source_hash}}", manifest.sourceHash);
+  }
+
+  private currentPromptVersion(): string {
+    return this.config.pagePromptVersion ?? defaultPromptVersion;
   }
 
   private async validateOutput(manifest: SkillManifest, page: GeneratedPageRecord, workspace: string): Promise<GeneratedPageRecord["viewManifest"]> {
@@ -328,7 +368,20 @@ export class PageGenerator {
 
   private markFailed(page: GeneratedPageRecord, message: string): void {
     this.database.updateGeneratedPage(page.id, { status: "failed", errorMessage: message.slice(0, 500) });
+    this.database.appendGeneratedPageEvent(page.id, "failed", message);
     this.database.updateSkillPageStatus(page.skillId, this.database.getActiveGeneratedPage(page.skillId) ? "stale" : "failed");
+  }
+
+  private recordOpenCodeEvent(pageId: string, event: OpenCodeServerEvent): void {
+    const type = typeof event.type === "string" && event.type.length > 0 ? event.type : "unknown";
+    const message = type === "session.idle"
+      ? "OpenCode reported the generation session is idle."
+      : type === "session.error"
+        ? "OpenCode reported a page generation error."
+        : type === "question.asked" || type === "permission.asked"
+          ? "OpenCode requested interaction during page generation."
+          : "OpenCode generation event received.";
+    this.database.appendGeneratedPageEvent(pageId, `opencode.${type}`, message);
   }
 
   private isUpstreamFailure(message: string): boolean {

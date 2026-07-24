@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -25,7 +25,7 @@ function manifest(): SkillManifest {
   };
 }
 
-async function createContext(): Promise<{ config: HubConfig; database: HubDatabase }> {
+async function createContext(overrides: Pick<HubConfig, "pageGenerationTimeoutMs" | "pageGenerationWorkspaceRoot"> = {}): Promise<{ config: HubConfig; database: HubDatabase }> {
   directory = await mkdtemp(path.join(tmpdir(), "skill-page-generator-"));
   const prompts = path.join(directory, "prompts");
   await mkdir(prompts, { recursive: true });
@@ -36,8 +36,9 @@ async function createContext(): Promise<{ config: HubConfig; database: HubDataba
     writeFile(path.join(prompts, "artifact-workbench.md"), "artifact-workbench"),
   ]);
   const config: HubConfig = {
-    projectRoot: directory, host: "127.0.0.1", port: 0, databasePath: path.join(directory, "hub.db"), skillSyncIntervalMs: 60000, runTimeoutMs: 60000, logLevel: "fatal",
-    opencode: { mode: "connect", url: new URL("http://127.0.0.1:1"), command: "opencode", args: [], workingDirectory: directory, configDirectory: path.join(directory, "opencode-config"), dataDirectory: path.join(directory, "opencode-data"), lockFilePath: path.join(directory, "lock"), logFilePath: path.join(directory, "log"), startTimeoutMs: 1000, skillRoots: [] },
+    projectRoot: directory, host: "127.0.0.1", port: 0, databasePath: path.join(directory, "hub.db"), skillSyncIntervalMs: 60000, runTimeoutMs: 60000, logLevel: "fatal", pageGenerationWorkspaceRoot: path.join(directory, "temporary-page-workspaces"),
+    opencode: { mode: "connect", url: new URL("http://127.0.0.1:1"), command: "opencode", args: [], workingDirectory: directory, configDirectory: path.join(directory, "opencode-config"), dataDirectory: path.join(directory, "opencode-data"), lockFilePath: path.join(directory, "lock"), logFilePath: path.join(directory, "log"), startTimeoutMs: 1000, skillRoots: [], includeApiSkills: true },
+    ...overrides,
   };
   return { config, database: new HubDatabase(config.databasePath) };
 }
@@ -78,6 +79,50 @@ describe("PageGenerator", () => {
       const reused = await generator.generate(skill);
       expect(reused.id).toBe(page?.id);
       expect(generator.getStatus(skill.id)).toHaveLength(1);
+
+      config.pagePromptVersion = "skill-page-contract-v2";
+      expect(generator.markStalePromptVersions()).toBe(1);
+      expect(database.getSkill(skill.id)?.pageStatus).toBe("stale");
+      await generator.generate(skill);
+      await generator.waitForIdle();
+      const versions = generator.getStatus(skill.id);
+      expect(versions).toHaveLength(2);
+      expect(versions.some((candidate) => candidate.id === page?.id && candidate.status === "ready")).toBe(true);
+      expect(generator.getActive(skill.id)).toMatchObject({ status: "ready", promptVersion: "skill-page-contract-v2" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("uses and cleans an isolated temporary workspace before persisting page output", async () => {
+    const { config, database } = await createContext();
+    const skill = manifest();
+    database.upsertSkill(skill);
+    const workspaceRoot = config.pageGenerationWorkspaceRoot!;
+    let workspace = "";
+    const trackingProvider: PageGenerationProvider = {
+      getHealthSnapshot: () => ({ status: "healthy" }),
+      startRun: async ({ directory, onEvent }) => {
+        workspace = directory;
+        const output = path.join(directory, "output");
+        await mkdir(output, { recursive: true });
+        await Promise.all([
+          writeFile(path.join(output, "index.html"), '<link rel="stylesheet" href="./styles.css"><form data-skill-form><input name="title"><select name="mode"></select><button type="submit">Run</button></form><div data-run-status></div><div data-run-events></div><div data-run-interaction></div><div data-run-artifacts></div><script type="module" src="/runtime/skill-runtime.js"></script>'),
+          writeFile(path.join(output, "styles.css"), ".page { color: var(--hub-color-text-primary); }"),
+          writeFile(path.join(output, "view.manifest.json"), JSON.stringify({ contractVersion: 1, preset: "form-first", sourceHash: "source-hash", inputIds: ["title", "mode"], runtime: "shared" })),
+        ]);
+        onEvent({ type: "session.idle" });
+        return { sessionId: "ses_temp_workspace", done: new Promise(() => undefined), abort: async () => undefined, close: () => undefined };
+      },
+    };
+    const generator = new PageGenerator(config, database, trackingProvider);
+    try {
+      await generator.generate(skill);
+      await generator.waitForIdle();
+      expect(workspace.startsWith(workspaceRoot)).toBe(true);
+      expect(workspace).not.toContain(path.join(config.projectRoot, "runtime", "page-generation"));
+      await expect(access(workspace)).rejects.toThrow();
+      expect(generator.getActive(skill.id)?.status).toBe("ready");
     } finally {
       database.close();
     }
@@ -108,6 +153,35 @@ describe("PageGenerator", () => {
       await generator.waitForIdle();
       expect(generator.getActive(skill.id)).toBeUndefined();
       expect(generator.getStatus(skill.id)).toEqual([expect.objectContaining({ status: "failed", errorMessage: expect.stringContaining("invalid JavaScript syntax") })]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects generated output that contains credential-like values", async () => {
+    const { config, database } = await createContext();
+    const skill = manifest();
+    database.upsertSkill(skill);
+    const unsafeProvider: PageGenerationProvider = {
+      getHealthSnapshot: () => ({ status: "healthy" }),
+      startRun: async ({ directory: workspace, onEvent }) => {
+        const output = path.join(workspace, "output");
+        await mkdir(output, { recursive: true });
+        await Promise.all([
+          writeFile(path.join(output, "index.html"), '<link rel="stylesheet" href="./styles.css"><form data-skill-form><input name="title"><select name="mode"></select><button type="submit">Run</button></form><div data-run-status></div><div data-run-events></div><div data-run-interaction></div><div data-run-artifacts></div><script type="module" src="/runtime/skill-runtime.js"></script><script type="module" src="./view.js"></script>'),
+          writeFile(path.join(output, "styles.css"), ".page { color: var(--hub-color-text-primary); }"),
+          writeFile(path.join(output, "view.js"), 'const apiKey = "not-a-real-secret";'),
+          writeFile(path.join(output, "view.manifest.json"), JSON.stringify({ contractVersion: 1, preset: "form-first", sourceHash: "source-hash", inputIds: ["title", "mode"], runtime: "shared" })),
+        ]);
+        onEvent({ type: "session.idle" });
+        return { sessionId: "ses_secret_page", done: new Promise(() => undefined), abort: async () => undefined, close: () => undefined };
+      },
+    };
+    const generator = new PageGenerator(config, database, unsafeProvider);
+    try {
+      await generator.generate(skill);
+      await generator.waitForIdle();
+      expect(generator.getStatus(skill.id)).toEqual([expect.objectContaining({ status: "failed", errorMessage: expect.stringContaining("credential-like") })]);
     } finally {
       database.close();
     }
@@ -152,6 +226,24 @@ describe("PageGenerator", () => {
       await generator.waitForIdle();
       expect(attempts).toBe(2);
       expect(generator.getActive(second.id)).toMatchObject({ status: "ready", active: true });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("fails and pauses the queue when OpenCode never completes a page-generation session", async () => {
+    const { config, database } = await createContext({ pageGenerationTimeoutMs: 20 });
+    const skill = manifest();
+    database.upsertSkill(skill);
+    const timedOutProvider: PageGenerationProvider = {
+      getHealthSnapshot: () => ({ status: "healthy" }),
+      startRun: async () => ({ sessionId: "ses_timeout", done: new Promise(() => undefined), abort: async () => undefined, close: () => undefined }),
+    };
+    const generator = new PageGenerator(config, database, timedOutProvider);
+    try {
+      await generator.generate(skill);
+      await generator.waitForIdle();
+      expect(generator.getStatus(skill.id)).toEqual([expect.objectContaining({ status: "failed", errorMessage: "Page generation timed out." })]);
     } finally {
       database.close();
     }

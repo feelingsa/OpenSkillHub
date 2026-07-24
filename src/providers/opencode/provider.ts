@@ -160,35 +160,50 @@ export class OpenCodeProvider {
   async startRun(options: { title: string; prompt: string; directory: string; onEvent: (event: OpenCodeServerEvent) => void }): Promise<OpenCodeRunHandle> {
     const health = await this.checkHealth();
     if (health.status !== "healthy") throw new Error("OpenCode is offline");
+    const model = this.config.model;
     const session = await this.requestJson<{ id?: unknown }>("session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: options.title }),
+      body: JSON.stringify({ title: options.title, ...(model ? { model } : {}) }),
     });
     if (!session || typeof session.id !== "string") throw new Error("OpenCode did not create a valid session");
     const sessionId = session.id;
     const subscription = await this.subscribe((event) => {
       if (event.properties && event.properties.sessionID === sessionId) options.onEvent(event);
     });
-    const endpoint = `session/${encodeURIComponent(sessionId)}/prompt_async`;
+    const endpoint = `session/${encodeURIComponent(sessionId)}/message`;
     const url = new URL(endpoint, this.config.url);
     url.searchParams.set("directory", options.directory);
-    try {
-      const response = await fetch(url, {
+    const promptController = new AbortController();
+    void fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parts: [{ type: "text", text: options.prompt }] }),
+        body: JSON.stringify({
+          parts: [{ type: "text", text: options.prompt }],
+          ...(model ? { model: { providerID: model.providerID, modelID: model.id }, ...(model.variant ? { variant: model.variant } : {}) } : {}),
+        }),
+        signal: promptController.signal,
+      })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`OpenCode message request returned HTTP ${response.status}`);
+        await response.arrayBuffer();
+        // The message endpoint completes only after the assistant has stopped. Some
+        // OpenCode versions omit session.idle from the shared SSE subscription.
+        options.onEvent({ type: "session.idle", properties: { sessionID: sessionId } });
+      })
+      .catch((error) => {
+        if (promptController.signal.aborted) return;
+        options.onEvent({ type: "session.error", properties: { message: error instanceof Error ? error.message : "OpenCode message request failed" } });
       });
-      if (!response.ok) throw new Error(`OpenCode prompt request returned HTTP ${response.status}`);
-    } catch (error) {
-      subscription.close();
-      throw error;
-    }
     return {
       sessionId,
       done: subscription.done,
-      close: subscription.close,
+      close: () => {
+        promptController.abort();
+        subscription.close();
+      },
       abort: async () => {
+        promptController.abort();
         await this.requestJson(`session/${encodeURIComponent(sessionId)}/abort`, { method: "POST" });
         subscription.close();
       },
