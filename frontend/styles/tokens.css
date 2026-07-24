@@ -1,0 +1,38 @@
+:root {
+  color-scheme: dark;
+
+  --hub-color-canvas: #050608;
+  --hub-color-surface: #090b10;
+  --hub-color-surface-raised: #141821;
+  --hub-color-surface-hover: #1a1f2a;
+  --hub-color-border: #2a3140;
+  --hub-color-text-primary: #f5f7fb;
+  --hub-color-text-secondary: #a6b0c1;
+  --hub-color-text-muted: #697386;
+  --hub-color-info: #27d7f5;
+  --hub-color-success: #32f5a6;
+  --hub-color-warning: #ffb84d;
+  --hub-color-danger: #ff5e70;
+  --hub-color-accent: #8b5cff;
+
+  --hub-font-sans: Inter, "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --hub-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --hub-space-1: 4px;
+  --hub-space-2: 8px;
+  --hub-space-3: 12px;
+  --hub-space-4: 16px;
+  --hub-space-5: 20px;
+  --hub-space-6: 24px;
+  --hub-space-8: 32px;
+  --hub-space-10: 40px;
+  --hub-space-12: 48px;
+
+  --hub-radius-sm: 4px;
+  --hub-radius-md: 6px;
+  --hub-radius-lg: 8px;
+  --hub-border-width: 1px;
+  --hub-shadow-raised: 0 18px 48px rgb(0 0 0 / 32%);
+  --hub-transition-fast: 160ms;
+  --hub-transition-base: 240ms;
+}

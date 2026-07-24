@@ -1,0 +1,17 @@
+{
+  "name": "skill-web-hub",
+  "version": "0.1.0",
+  "description": "LAN-accessible OpenCode Skill Web Hub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "audit:design": "node scripts/audit-design-sources.mjs"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "dependencies": {
+    "gsap": "3.13.0"
+  }
+}

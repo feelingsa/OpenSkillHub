@@ -1,0 +1,12 @@
+node_modules/
+.npm-cache/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+data/*.db
+data/*.db-*
+runtime/artifacts/
+runtime/logs/
+frontend/generated/.cache/
