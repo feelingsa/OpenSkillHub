@@ -57,4 +57,27 @@ describe("administrator authentication", () => {
       await app.close();
     }
   });
+
+  it("creates the configured initial non-administrator account", async () => {
+    testDirectory = await mkdtemp(path.join(tmpdir(), "skill-web-hub-bootstrap-user-"));
+    const config: HubConfig = {
+      projectRoot: path.resolve(import.meta.dirname, ".."), host: "127.0.0.1", port: 0, databasePath: path.join(testDirectory, "hub.db"),
+      skillSyncIntervalMs: 60000, runTimeoutMs: 60000, logLevel: "fatal",
+      admin: { username: "admim", password: "admim", sessionTtlMs: 60000 },
+      initialUser: { username: "123", password: "123" },
+      passwordMinLength: 3,
+      opencode: {
+        mode: "connect", url: new URL("http://127.0.0.1:1"), command: "opencode", args: [], workingDirectory: testDirectory,
+        configDirectory: path.join(testDirectory, "config"), dataDirectory: path.join(testDirectory, "data"), lockFilePath: path.join(testDirectory, "lock"), logFilePath: path.join(testDirectory, "log"), startTimeoutMs: 1000, skillRoots: [],
+      },
+    };
+    const app = await buildServer(config);
+    try {
+      const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "123", password: "123" } });
+      expect(login.statusCode).toBe(200);
+      expect(login.json()).toMatchObject({ username: "123", role: "user" });
+    } finally {
+      await app.close();
+    }
+  });
 });

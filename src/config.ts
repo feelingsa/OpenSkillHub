@@ -26,7 +26,10 @@ const envSchema = z.object({
   HUB_PAGE_PROMPT_VERSION: z.string().min(1).default("skill-page-contract-v1"),
   HUB_ADMIN_USERNAME: z.string().min(1).max(80).default("admin"),
   // This value deliberately works only for a local first boot. Replace it before LAN use.
-  HUB_ADMIN_PASSWORD: z.string().min(12).default("change-me-before-lan-use"),
+  HUB_ADMIN_PASSWORD: z.string().min(3).max(256).default("change-me-before-lan-use"),
+  HUB_INITIAL_USER_USERNAME: z.string().min(3).max(80).optional(),
+  HUB_INITIAL_USER_PASSWORD: z.string().min(3).max(256).optional(),
+  HUB_PASSWORD_MIN_LENGTH: z.coerce.number().int().min(3).max(256).default(12),
   HUB_SESSION_TTL_MS: z.coerce.number().int().min(60000).max(2592000000).default(86400000),
   HUB_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   HUB_AUTH_REQUIRED: z.enum(["true", "false"]).default("true"),
@@ -73,6 +76,11 @@ export interface HubConfig {
     password: string;
     sessionTtlMs: number;
   };
+  initialUser?: {
+    username: string;
+    password: string;
+  };
+  passwordMinLength?: number;
   artifactRetentionDays?: number;
   authRequired?: boolean;
   maxConcurrentRunsPerUser?: number;
@@ -110,6 +118,18 @@ export function loadConfig(projectRoot: string): HubConfig {
   }
 
   const env = envSchema.parse(process.env);
+  if (env.HUB_ADMIN_PASSWORD.length < env.HUB_PASSWORD_MIN_LENGTH) {
+    throw new Error("HUB_ADMIN_PASSWORD must meet HUB_PASSWORD_MIN_LENGTH.");
+  }
+  if (Boolean(env.HUB_INITIAL_USER_USERNAME) !== Boolean(env.HUB_INITIAL_USER_PASSWORD)) {
+    throw new Error("HUB_INITIAL_USER_USERNAME and HUB_INITIAL_USER_PASSWORD must be set together.");
+  }
+  if (env.HUB_INITIAL_USER_USERNAME === env.HUB_ADMIN_USERNAME) {
+    throw new Error("HUB_INITIAL_USER_USERNAME must differ from HUB_ADMIN_USERNAME.");
+  }
+  if (env.HUB_INITIAL_USER_PASSWORD && env.HUB_INITIAL_USER_PASSWORD.length < env.HUB_PASSWORD_MIN_LENGTH) {
+    throw new Error("HUB_INITIAL_USER_PASSWORD must meet HUB_PASSWORD_MIN_LENGTH.");
+  }
   const requestedRoots = env.OPENCODE_SKILL_ROOTS_JSON
     ? parseStringArray(env.OPENCODE_SKILL_ROOTS_JSON, "OPENCODE_SKILL_ROOTS_JSON")
     : defaultSkillRoots();
@@ -133,6 +153,10 @@ export function loadConfig(projectRoot: string): HubConfig {
       password: env.HUB_ADMIN_PASSWORD,
       sessionTtlMs: env.HUB_SESSION_TTL_MS,
     },
+    initialUser: env.HUB_INITIAL_USER_USERNAME && env.HUB_INITIAL_USER_PASSWORD
+      ? { username: env.HUB_INITIAL_USER_USERNAME, password: env.HUB_INITIAL_USER_PASSWORD }
+      : undefined,
+    passwordMinLength: env.HUB_PASSWORD_MIN_LENGTH,
     artifactRetentionDays: env.HUB_ARTIFACT_RETENTION_DAYS,
     authRequired: env.HUB_AUTH_REQUIRED === "true",
     maxConcurrentRunsPerUser: env.HUB_MAX_CONCURRENT_RUNS_PER_USER,

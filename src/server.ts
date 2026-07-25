@@ -34,7 +34,7 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
   const pages = new PageGenerator(config, database, provider);
   const storage = new StorageMaintenanceService(config, database, provider);
   const auth = new AdminAuthService(config, database);
-  auth.ensureBootstrapAdministrator();
+  auth.ensureBootstrapAccounts();
   let scheduledSync: NodeJS.Timeout | undefined;
 
   const syncSkillsAndQueuePages = async () => {

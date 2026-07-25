@@ -42,11 +42,15 @@ export class AuthenticationError extends Error {
 export class AdminAuthService {
   private readonly username: string;
   private readonly password: string;
+  private readonly initialUser: HubConfig["initialUser"];
+  private readonly passwordMinLength: number;
   private readonly ttlMs: number;
 
   constructor(private readonly config: HubConfig, private readonly database: HubDatabase) {
     this.username = config.admin?.username ?? "admin";
     this.password = config.admin?.password ?? "change-me-before-lan-use";
+    this.initialUser = config.initialUser;
+    this.passwordMinLength = config.passwordMinLength ?? 12;
     this.ttlMs = config.admin?.sessionTtlMs ?? 86400000;
   }
 
@@ -59,12 +63,22 @@ export class AdminAuthService {
     return user;
   }
 
+  ensureBootstrapAccounts(): void {
+    this.ensureBootstrapAdministrator();
+    if (!this.initialUser || this.database.getUserByUsername(this.initialUser.username)) return;
+    const now = new Date().toISOString();
+    this.database.createUser(
+      { id: randomUUID(), username: this.initialUser.username, role: "user", disabled: false, createdAt: now, updatedAt: now },
+      hashPassword(this.initialUser.password),
+    );
+  }
+
   login(username: unknown, password: unknown): { user: AuthenticatedUser; token: string } | undefined {
     if (typeof username !== "string" || typeof password !== "string") {
       this.database.appendAuditEvent({ type: "auth.login_failed" });
       return undefined;
     }
-    this.ensureBootstrapAdministrator();
+    this.ensureBootstrapAccounts();
     const account = this.database.getUserByUsername(username);
     if (!account || account.disabled || !account.passwordHash || !verifyPassword(password, account.passwordHash)) {
       this.database.appendAuditEvent({ userId: account?.id, type: "auth.login_failed" });
@@ -108,7 +122,7 @@ export class AdminAuthService {
 
   createUser(username: unknown, password: unknown, role: unknown = "user"): UserRecord {
     if (typeof username !== "string" || !usernamePattern.test(username)) throw new AuthenticationError("Username must be 3-80 letters, numbers, dots, underscores, or hyphens.");
-    if (typeof password !== "string" || password.length < 12 || password.length > 256) throw new AuthenticationError("Password must be 12-256 characters.");
+    if (typeof password !== "string" || password.length < this.passwordMinLength || password.length > 256) throw new AuthenticationError(`Password must be ${this.passwordMinLength}-256 characters.`);
     if (role !== "user" && role !== "administrator") throw new AuthenticationError("Invalid user role.");
     if (this.database.getUserByUsername(username)) throw new AuthenticationError("Username is already in use.");
     const now = new Date().toISOString();
@@ -123,7 +137,7 @@ export class AdminAuthService {
     if (update.disabled !== undefined && typeof update.disabled !== "boolean") throw new AuthenticationError("Disabled must be true or false.");
     let passwordHash: string | undefined;
     if (update.password !== undefined) {
-      if (typeof update.password !== "string" || update.password.length < 12 || update.password.length > 256) throw new AuthenticationError("Password must be 12-256 characters.");
+      if (typeof update.password !== "string" || update.password.length < this.passwordMinLength || update.password.length > 256) throw new AuthenticationError(`Password must be ${this.passwordMinLength}-256 characters.`);
       passwordHash = hashPassword(update.password);
     }
     return this.database.updateUser(id, { role: role as UserRole | undefined, disabled: update.disabled as boolean | undefined, passwordHash });
