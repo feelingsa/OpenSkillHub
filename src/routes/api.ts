@@ -340,7 +340,7 @@ export async function registerApiRoutes(
     const skill = database.getSkill(request.params.skillId);
     if (!skill || !skill.enabled) return reply.code(404).send({ error: "SKILL_NOT_FOUND" });
     const page = pages.getActive(skill.id);
-    return page ? toPublicGeneratedPage(page) : { status: skill.pageStatus };
+    return page ? { ...toPublicGeneratedPage(page), isCurrentPrompt: page.promptVersion === config.pagePromptVersion } : { status: skill.pageStatus, isCurrentPrompt: false };
   });
 
   app.post<{ Body: { skillId?: unknown; inputs?: unknown; confirmHighRisk?: unknown } }>("/api/runs", { preHandler: requireAuthenticated }, async (request, reply) => {

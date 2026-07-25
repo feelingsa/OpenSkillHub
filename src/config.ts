@@ -23,7 +23,7 @@ const envSchema = z.object({
   HUB_RUN_TIMEOUT_MS: z.coerce.number().int().min(10000).max(86400000).default(900000),
   HUB_PAGE_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(900000).default(120000),
   HUB_PAGE_GENERATION_TEMP_ROOT: z.string().min(1).default(path.join(tmpdir(), "skill-web-hub-page-generation")),
-  HUB_PAGE_PROMPT_VERSION: z.string().min(1).default("skill-page-contract-v1"),
+  HUB_PAGE_PROMPT_VERSION: z.string().min(1).default("skill-page-contract-v2"),
   HUB_ADMIN_USERNAME: z.string().min(1).max(80).default("admin"),
   // This value deliberately works only for a local first boot. Replace it before LAN use.
   HUB_ADMIN_PASSWORD: z.string().min(3).max(256).default("change-me-before-lan-use"),

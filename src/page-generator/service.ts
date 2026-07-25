@@ -10,10 +10,40 @@ import type { OpenCodeRunHandle, OpenCodeServerEvent } from "../providers/openco
 import { HubDatabase } from "../storage/database.js";
 import type { GeneratedPagePreset, GeneratedPageRecord, SkillManifest } from "../types.js";
 
-const defaultPromptVersion = "skill-page-contract-v1";
+const defaultPromptVersion = "skill-page-contract-v2";
 const maximumGeneratedFileBytes = 250 * 1024;
 const outputFiles = ["index.html", "styles.css", "view.manifest.json"] as const;
 const optionalOutputFiles = ["view.js"] as const;
+const generatedThemeMarker = "/* skill-web-hub-generated-theme-v2 */";
+const generatedThemeCss = `${generatedThemeMarker}
+:root {
+  color-scheme: dark;
+  --hub-color-canvas: #050608;
+  --hub-color-surface: #090b10;
+  --hub-color-surface-raised: #141821;
+  --hub-color-border: #2a3140;
+  --hub-color-text-primary: #f5f7fb;
+  --hub-color-text-secondary: #a6b0c1;
+  --hub-color-text-muted: #697386;
+  --hub-color-info: #27d7f5;
+  --hub-color-success: #32f5a6;
+  --hub-color-warning: #ffb84d;
+  --hub-color-danger: #ff5e70;
+  --hub-font-sans: Inter, "Microsoft YaHei", system-ui, sans-serif;
+  --hub-font-mono: Consolas, "SFMono-Regular", monospace;
+  --hub-radius-sm: 4px;
+  --hub-radius-md: 6px;
+  --hub-shadow-raised: 0 18px 48px rgb(0 0 0 / 32%);
+}
+
+html, body { min-height: 100%; background: var(--hub-color-canvas) !important; color: var(--hub-color-text-primary) !important; }
+body { margin: 0; padding: 22px; font-family: var(--hub-font-sans); background-image: linear-gradient(rgb(255 255 255 / 0.025) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 0.02) 1px, transparent 1px) !important; background-size: 28px 28px !important; }
+input, select, textarea { border: 1px solid var(--hub-color-border) !important; border-radius: var(--hub-radius-sm) !important; background: var(--hub-color-surface) !important; color: var(--hub-color-text-primary) !important; font: inherit; }
+button { border: 1px solid var(--hub-color-info) !important; border-radius: var(--hub-radius-sm) !important; background: var(--hub-color-info) !important; color: #051116 !important; font: inherit; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+a { color: var(--hub-color-info) !important; }
+[data-run-status], [data-run-events], [data-run-interaction], [data-run-artifacts] { color: var(--hub-color-text-secondary); }
+`;
 
 const viewManifestSchema = z.object({
   contractVersion: z.literal(1),
@@ -91,6 +121,10 @@ function assertGeneratedHtmlIsSafe(html: string): void {
 function assertGeneratedCssIsSafe(css: string): void {
   assertGeneratedTextIsSafe("styles.css", css);
   if (/\@import|url\s*\(/i.test(css)) throw new Error("styles.css contains an external asset reference");
+}
+
+export function applyGeneratedTheme(css: string): string {
+  return css.includes(generatedThemeMarker) ? css : `${generatedThemeCss}\n${css}`;
 }
 
 function validateViewManifest(manifest: SkillManifest, preset: GeneratedPagePreset, raw: string): GeneratedPageRecord["viewManifest"] {
@@ -341,9 +375,12 @@ export class PageGenerator {
       }
     }
     const html = files.get("index.html");
-    const css = files.get("styles.css");
+    const originalCss = files.get("styles.css");
     const rawViewManifest = files.get("view.manifest.json");
-    if (!html || !css || !rawViewManifest) throw new Error("Generated page is missing a required output file.");
+    if (!html || !originalCss || !rawViewManifest) throw new Error("Generated page is missing a required output file.");
+    const css = applyGeneratedTheme(originalCss);
+    if (Buffer.byteLength(css) > maximumGeneratedFileBytes) throw new Error("styles.css exceeds the generated file size limit after applying the Hub theme.");
+    if (css !== originalCss) await writeFile(path.join(output, "styles.css"), css, "utf8");
     assertGeneratedHtmlIsSafe(html);
     assertGeneratedCssIsSafe(css);
     const viewScript = files.get("view.js");

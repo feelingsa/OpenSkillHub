@@ -456,3 +456,11 @@ GET /api/artifacts/:artifactId/download
 - [ ] 运行产物保留多久。建议默认 7 或 30 天，由管理员配置。
 - [ ] 是否允许 Skill 访问宿主机任意目录。本文默认不允许，只能访问本次运行工作区和显式配置的只读资源。
 - [ ] 第一版是否只支持 Windows。当前环境和路径均为 Windows，建议第一版先限定 Windows，协议层保持跨平台。
+
+# UI Source Coverage Refresh (2026-07-25)
+
+- [x] Register all five user-side and five administration-side desktop boards from `source/` in the route map.
+- [x] Apply the shared desktop workbench shell to login, Skill operation, generated-page host, run history, and run detail routes while preserving the catalog card-deck interaction.
+- [x] Keep all seven administration routes on the source-derived dark console frame and refresh the `1440 x 900` overview baseline.
+- [x] Introduce generated-page contract v2, enforce the shared dark token theme at validation time, and migrate persisted generated pages.
+- [x] Verify with typecheck, automated tests, browser flow tests, source audit, live user-workbench inspection, and the refreshed administrator screenshot.

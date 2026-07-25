@@ -13,6 +13,7 @@
     "test:api": "vitest run tests/api.test.ts",
     "test:browser": "node scripts/check-browser.mjs && tsx scripts/check-hub-browser.ts",
     "test:performance": "tsx scripts/performance-smoke.ts",
+    "migrate:generated-theme": "tsx scripts/migrate-generated-page-theme.ts",
     "validate:real-page": "tsx scripts/validate-real-page-generation.ts",
     "capture:desktop": "node scripts/capture-desktop-baseline.mjs",
     "capture:admin": "node scripts/capture-admin-desktop.mjs",

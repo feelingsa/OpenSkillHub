@@ -27,6 +27,7 @@ let activeGeneratedFrame;
 let activeGeneratedRunId = "";
 let activeGeneratedRunStatus = "idle";
 let csrfToken = "";
+let activeSession;
 
 const state = {
   allSkills: [],
@@ -47,6 +48,7 @@ function authenticatedFetch(url, options = {}) {
 }
 
 function showUserSession(session) {
+  activeSession = session;
   userSessionActions.hidden = false;
   userSessionName.textContent = session.username;
   adminConsoleLink.hidden = session.role !== "administrator";
@@ -54,6 +56,27 @@ function showUserSession(session) {
     await authenticatedFetch("/api/auth/logout", { method: "POST" });
     window.location.assign("/login");
   };
+}
+
+function renderUserWorkspace({ eyebrow, title, description, section, body }) {
+  const username = activeSession?.username || "";
+  return `<section class="user-workspace">
+    <aside class="user-workspace-rail">
+      <a class="user-workspace-brand" href="/"><span>LOCAL OPENCODE</span>SKILL<br>WEB HUB</a>
+      <nav class="user-workspace-nav" aria-label="用户端导航">
+        <a href="/" class="${section === "catalog" ? "is-current" : ""}"><span>01</span>Skill catalog</a>
+        <a href="/runs" class="${section === "runs" ? "is-current" : ""}"><span>02</span>Run history</a>
+      </nav>
+      <div class="user-workspace-rail-footer"><span>SESSION</span><strong>${escapeHtml(username)}</strong></div>
+    </aside>
+    <main class="user-workspace-main">
+      <header class="user-workspace-topbar">
+        <div><p>${escapeHtml(eyebrow)}</p><h1 class="user-workspace-title">${escapeHtml(title)}</h1></div>
+        <div class="user-workspace-status"><span class="workspace-status-dot"></span><span>CONNECTED HUB</span></div>
+      </header>
+      <div class="user-workspace-content"><p class="user-workspace-description">${escapeHtml(description)}</p>${body}</div>
+    </main>
+  </section>`;
 }
 
 document.documentElement.dataset.gsapReady = "true";
@@ -519,7 +542,13 @@ function renderGeneratedSkillPage(skill, generatedPage) {
   activeGeneratedRunStatus = "idle";
   const generatedUrl = new URL(generatedPage.url, window.location.origin);
   generatedUrl.searchParams.set("skillId", skill.id);
-  skillPageContent.innerHTML = `<a class="skill-page-back" href="/">返回 Skill 目录</a><iframe id="generatedSkillFrame" class="generated-skill-frame" title="${escapeHtml(skill.displayName)} 操作页面" sandbox="allow-scripts" src="${escapeHtml(generatedUrl.pathname + generatedUrl.search)}"></iframe>`;
+  skillPageContent.innerHTML = renderUserWorkspace({
+    eyebrow: `${skill.provider.toUpperCase()} / GENERATED VIEW`,
+    title: skill.displayName,
+    description: "此页面由已审核的 Skill 页面版本提供。运行状态与产物仍由 Hub 统一管理。",
+    section: "catalog",
+    body: `<section class="workspace-panel generated-page-panel"><div class="workspace-panel-heading"><span>SKILL WORKSPACE</span><a class="skill-page-back" href="/">返回目录</a></div><iframe id="generatedSkillFrame" class="generated-skill-frame" title="${escapeHtml(skill.displayName)} 操作页面" sandbox="allow-scripts" src="${escapeHtml(generatedUrl.pathname + generatedUrl.search)}"></iframe></section>`,
+  });
   activeGeneratedFrame = document.getElementById("generatedSkillFrame");
 }
 
@@ -527,16 +556,28 @@ function renderRunHistory(runs) {
   hubShell.hidden = true;
   skillPage.hidden = false;
   activeGeneratedFrame = undefined;
-  const rows = runs.map((run) => `<a class="run-history-item" href="/runs/${encodeURIComponent(run.id)}"><strong>${escapeHtml(run.skillId)}</strong><span>${escapeHtml(String(run.status).toUpperCase())}</span><time datetime="${escapeHtml(run.createdAt)}">${escapeHtml(new Date(run.createdAt).toLocaleString("zh-CN"))}</time></a>`).join("");
-  skillPageContent.innerHTML = `<a class="skill-page-back" href="/">返回 Skill 目录</a><h1>运行历史</h1><p>查看当前服务保存的运行状态、事件和可下载产物。</p><section class="run-history-list">${rows || "<p class=\"run-history-empty\">尚无运行记录。</p>"}</section>`;
+  const rows = runs.map((run) => `<a class="run-history-item" href="/runs/${encodeURIComponent(run.id)}"><span class="run-history-mark"></span><strong>${escapeHtml(run.skillId)}</strong><span class="run-history-status">${escapeHtml(String(run.status).toUpperCase())}</span><time datetime="${escapeHtml(run.createdAt)}">${escapeHtml(new Date(run.createdAt).toLocaleString("zh-CN"))}</time></a>`).join("");
+  skillPageContent.innerHTML = renderUserWorkspace({
+    eyebrow: "RUN ARCHIVE / USER SCOPE",
+    title: "运行历史",
+    description: "查看当前账户发起的 Skill 运行、事件记录和已登记产物。",
+    section: "runs",
+    body: `<section class="workspace-panel run-history-panel"><div class="workspace-panel-heading"><span>RECENT RUNS</span><span>${runs.length} RECORDS</span></div><div class="run-history-list">${rows || "<p class=\"run-history-empty\">尚无运行记录。</p>"}</div></section>`,
+  });
 }
 
 function renderRunDetail(run, events, artifacts) {
   hubShell.hidden = true;
   skillPage.hidden = false;
   activeGeneratedFrame = undefined;
-  const eventRows = events.map((event) => `<li><strong>${escapeHtml(event.type)}</strong><span>${escapeHtml(event.createdAt)}</span></li>`).join("");
-  skillPageContent.innerHTML = `<a class="skill-page-back" href="/runs">返回运行历史</a><h1>${escapeHtml(run.skillId)}</h1><p>${escapeHtml(String(run.status).toUpperCase())} · ${escapeHtml(run.createdAt)}</p><section class="run-detail-panel"><h2>事件时间线</h2><ol class="run-events">${eventRows || "<li>尚未记录事件。</li>"}</ol></section><section class="run-detail-panel"><h2>运行产物</h2><div id="runArtifacts"></div></section>`;
+  const eventRows = events.map((event) => `<li><span class="run-event-sequence">${escapeHtml(String(event.sequence ?? ""))}</span><div><strong>${escapeHtml(event.type)}</strong><span>${escapeHtml(event.text || event.message || event.tool || event.createdAt)}</span></div></li>`).join("");
+  skillPageContent.innerHTML = renderUserWorkspace({
+    eyebrow: "RUN DETAIL / USER SCOPE",
+    title: run.skillId,
+    description: `${String(run.status).toUpperCase()} · ${new Date(run.createdAt).toLocaleString("zh-CN")}`,
+    section: "runs",
+    body: `<div class="run-detail-grid"><section class="workspace-panel run-detail-panel"><div class="workspace-panel-heading"><span>EVENT TIMELINE</span><a class="skill-page-back" href="/runs">返回历史</a></div><ol class="run-events run-events-detail">${eventRows || "<li>尚未记录事件。</li>"}</ol></section><section class="workspace-panel run-detail-panel"><div class="workspace-panel-heading"><span>ARTIFACTS</span><span>${escapeHtml(String(run.status).toUpperCase())}</span></div><div id="runArtifacts"></div></section></div>`,
+  });
   renderRunArtifacts(artifacts);
 }
 
@@ -563,7 +604,7 @@ async function renderRunDetailPage(runId) {
 
 async function renderSkillPage(skill) {
   const generatedPage = await requestJson(`/api/skills/${encodeURIComponent(skill.id)}/page`).catch(() => undefined);
-  if (generatedPage?.status === "ready" && typeof generatedPage.url === "string") {
+  if (generatedPage?.status === "ready" && generatedPage.isCurrentPrompt === true && typeof generatedPage.url === "string") {
     renderGeneratedSkillPage(skill, generatedPage);
     return;
   }
@@ -571,24 +612,13 @@ async function renderSkillPage(skill) {
   hubShell.hidden = true;
   skillPage.hidden = false;
   const fields = (skill.inputs || []).map(renderInputField).join("");
-  skillPageContent.innerHTML = `
-    <span class="meta-kicker">${escapeHtml(skill.provider.toUpperCase())} SKILL · ${escapeHtml(pageStateLabel(skill.pageStatus))}</span>
-    <h1>${escapeHtml(skill.displayName)}</h1>
-    <p>${escapeHtml(compactDescription(skill.description))}</p>
-    <form id="skillRunForm" class="skill-run-form">
-      <div class="skill-run-fields">${fields}</div>
-      <button type="submit" class="skill-run-submit">运行 Skill</button>
-    </form>
-    <section class="skill-run-panel" aria-live="polite">
-      <header><span>运行状态</span><strong id="runStatus">IDLE</strong></header>
-      <p id="runSummary">提交后将由服务端验证参数并创建运行。</p>
-      <div class="run-result-meta"><span id="runDuration">耗时：-</span><span id="runArtifactCount">产物：0</span></div>
-      <ol id="runEvents" class="run-events"></ol>
-      <div id="runInteraction" class="run-interaction" aria-live="polite"></div>
-      <section class="run-artifacts" aria-live="polite"><h2>运行产物</h2><div id="runArtifacts"><p class="run-artifacts-empty">运行完成后将在这里显示产物。</p></div></section>
-      <button id="runAbortButton" class="skill-run-abort" type="button" disabled>终止运行</button>
-    </section>
-  `;
+  skillPageContent.innerHTML = renderUserWorkspace({
+    eyebrow: `${skill.provider.toUpperCase()} SKILL / ${pageStateLabel(skill.pageStatus)}`,
+    title: skill.displayName,
+    description: compactDescription(skill.description),
+    section: "catalog",
+    body: `<div class="skill-workspace-grid"><section class="workspace-panel skill-input-panel"><div class="workspace-panel-heading"><span>CONFIGURE INPUTS</span><span>${(skill.inputs || []).length} FIELDS</span></div><form id="skillRunForm" class="skill-run-form"><div class="skill-run-fields">${fields}</div><button type="submit" class="skill-run-submit">运行 Skill</button></form></section><section class="workspace-panel skill-run-panel" aria-live="polite"><div class="workspace-panel-heading"><span>RUN CONSOLE</span><strong id="runStatus">IDLE</strong></div><p id="runSummary">提交后将由服务端验证参数并创建运行。</p><div class="run-result-meta"><span id="runDuration">耗时：-</span><span id="runArtifactCount">产物：0</span></div><ol id="runEvents" class="run-events"></ol><div id="runInteraction" class="run-interaction" aria-live="polite"></div><section class="run-artifacts" aria-live="polite"><h2>运行产物</h2><div id="runArtifacts"><p class="run-artifacts-empty">运行完成后将在这里显示产物。</p></div></section><button id="runAbortButton" class="skill-run-abort" type="button" disabled>终止运行</button></section></div>`,
+  });
   bindRunForm(skill);
 }
 
@@ -596,7 +626,13 @@ function renderRouteError() {
   activeGeneratedFrame = undefined;
   hubShell.hidden = true;
   skillPage.hidden = false;
-  skillPageContent.innerHTML = "<h1>Skill 不可用</h1><p>该 Skill 不存在、被禁用或正在更新目录。</p>";
+  skillPageContent.innerHTML = renderUserWorkspace({
+    eyebrow: "ROUTE STATUS / UNAVAILABLE",
+    title: "Skill 不可用",
+    description: "该 Skill 不存在、被禁用或正在更新目录。",
+    section: "catalog",
+    body: "<section class=\"workspace-panel workspace-empty-state\"><strong>CATALOG ENTRY UNAVAILABLE</strong><a class=\"skill-page-back\" href=\"/\">返回 Skill 目录</a></section>",
+  });
 }
 
 function applyFilters() {

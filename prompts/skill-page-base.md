@@ -1,4 +1,4 @@
-# Skill Web Hub Generated Page Contract v1
+# Skill Web Hub Generated Page Contract v2
 
 You are generating the dedicated content page for one OpenCode Skill.
 
@@ -27,6 +27,8 @@ Do not create files outside `output/`. Do not edit or delete project files outsi
 - Use the shared runtime API for Skill execution. Do not construct prompts or call `/api/runs` directly.
 - Render within the supplied document body only. Do not recreate Hub navigation, login, admin controls, global header, or an independent application shell.
 - Use the Hub CSS custom properties such as `--hub-color-*`, `--hub-font-*`, `--hub-radius-*`, and `--hub-shadow-*`. Do not hard-code another color system.
+- The operation surface must use the source design's dark canvas: `--hub-color-canvas` behind `--hub-color-surface` and `--hub-color-surface-raised` panels. Do not use white, cream, or light-editor backgrounds anywhere in the page.
+- Keep the desktop surface dense and utilitarian: 1px borders, square-to-small radii, compact label typography, and clear panel headers. Do not create a landing page, decorative hero, or nested card stacks.
 - Do not use absolute local paths, secrets, credentials, or untrusted HTML injection.
 - Make controls keyboard reachable and use native form controls where possible.
 - Keep status, questions, permissions, logs, and artifacts visible through the shared runtime mounts specified below.

@@ -31,7 +31,7 @@ async function api(url, options = {}) {
 
 function renderLogin(message = "") {
   root.hidden = false;
-  root.innerHTML = `<section class="admin-login"><div class="admin-login-card"><p class="admin-eyebrow">SKILL WEB HUB</p><h1>Sign in</h1><p>Use the account created by this Hub's administrator.</p><form id="adminLoginForm"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">Sign in</button></form></div></section>`;
+  root.innerHTML = `<section class="auth-shell"><div class="auth-intro"><p>LOCAL OPENCODE / LAN SERVICE</p><h1>SKILL<br>WEB HUB</h1><span>AUTHENTICATED WORKSPACE</span></div><div class="auth-panel"><p class="admin-eyebrow">ACCOUNT ACCESS</p><h2>Sign in</h2><p>Use the account created for this Hub.</p><form id="adminLoginForm"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">Sign in</button></form></div></section>`;
   root.querySelector("form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);

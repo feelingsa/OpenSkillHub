@@ -36,7 +36,7 @@ async function createContext(overrides: Pick<HubConfig, "pageGenerationTimeoutMs
     writeFile(path.join(prompts, "artifact-workbench.md"), "artifact-workbench"),
   ]);
   const config: HubConfig = {
-    projectRoot: directory, host: "127.0.0.1", port: 0, databasePath: path.join(directory, "hub.db"), skillSyncIntervalMs: 60000, runTimeoutMs: 60000, logLevel: "fatal", pageGenerationWorkspaceRoot: path.join(directory, "temporary-page-workspaces"),
+    projectRoot: directory, host: "127.0.0.1", port: 0, databasePath: path.join(directory, "hub.db"), skillSyncIntervalMs: 60000, runTimeoutMs: 60000, logLevel: "fatal", pagePromptVersion: "skill-page-contract-v1", pageGenerationWorkspaceRoot: path.join(directory, "temporary-page-workspaces"),
     opencode: { mode: "connect", url: new URL("http://127.0.0.1:1"), command: "opencode", args: [], workingDirectory: directory, configDirectory: path.join(directory, "opencode-config"), dataDirectory: path.join(directory, "opencode-data"), lockFilePath: path.join(directory, "lock"), logFilePath: path.join(directory, "log"), startTimeoutMs: 1000, skillRoots: [], includeApiSkills: true },
     ...overrides,
   };
@@ -75,6 +75,7 @@ describe("PageGenerator", () => {
       expect(page).toMatchObject({ status: "ready", active: true, sourceHash: skill.sourceHash, preset: "form-first" });
       expect(page?.outputDirectory).toMatch(/^generated\/opencode--example\//);
       expect(await readFile(path.join(config.projectRoot, "frontend", page!.outputDirectory!, "index.html"), "utf8")).toContain("data-skill-form");
+      expect(await readFile(path.join(config.projectRoot, "frontend", page!.outputDirectory!, "styles.css"), "utf8")).toContain("skill-web-hub-generated-theme-v2");
       expect(database.getSkill(skill.id)?.pageStatus).toBe("ready");
       const reused = await generator.generate(skill);
       expect(reused.id).toBe(page?.id);
