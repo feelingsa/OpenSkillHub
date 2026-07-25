@@ -75,11 +75,12 @@ try {
     documentWidth: document.documentElement.scrollWidth,
     sidebarLinks: document.querySelectorAll(".admin-sidebar nav a").length,
     metrics: document.querySelectorAll(".admin-metrics article").length,
+    auditRows: document.querySelectorAll(".admin-table tbody tr").length,
     route: window.location.pathname,
   }));
   if (metrics.viewport.width !== viewport.width || metrics.viewport.height !== viewport.height) throw new Error("Unexpected visual viewport.");
   if (metrics.documentWidth > viewport.width) throw new Error(`Desktop page has horizontal overflow: ${metrics.documentWidth}px.`);
-  if (metrics.sidebarLinks !== 7 || metrics.metrics !== 4 || metrics.route !== "/admin") throw new Error("Admin shell controls were not rendered.");
+  if (metrics.sidebarLinks !== 7 || metrics.metrics !== 4 || metrics.auditRows < 1 || metrics.route !== "/admin") throw new Error("Admin shell controls were not rendered.");
   if (errors.length > 0) throw new Error(`Browser reported errors: ${errors.join(" | ")}`);
   if (process.env.HUB_ADMIN_VISUAL_SKIP_SCREENSHOT === "true") {
     console.log("Admin desktop shell verified without writing a screenshot.");

@@ -187,6 +187,35 @@ describe("PageGenerator", () => {
     }
   });
 
+  it("rejects generated HTML that attempts inline event-handler injection", async () => {
+    const { config, database } = await createContext();
+    const skill = manifest();
+    database.upsertSkill(skill);
+    const unsafeProvider: PageGenerationProvider = {
+      getHealthSnapshot: () => ({ status: "healthy" }),
+      startRun: async ({ directory: workspace, onEvent }) => {
+        const output = path.join(workspace, "output");
+        await mkdir(output, { recursive: true });
+        await Promise.all([
+          writeFile(path.join(output, "index.html"), '<link rel="stylesheet" href="./styles.css"><form data-skill-form><button onclick="alert(1)" type="submit">Run</button></form><div data-run-status></div><div data-run-events></div><div data-run-interaction></div><div data-run-artifacts></div><script type="module" src="/runtime/skill-runtime.js"></script>'),
+          writeFile(path.join(output, "styles.css"), ".page { color: var(--hub-color-text-primary); }"),
+          writeFile(path.join(output, "view.manifest.json"), JSON.stringify({ contractVersion: 1, preset: "form-first", sourceHash: "source-hash", inputIds: ["title", "mode"], runtime: "shared" })),
+        ]);
+        onEvent({ type: "session.idle" });
+        return { sessionId: "ses_xss_page", done: new Promise(() => undefined), abort: async () => undefined, close: () => undefined };
+      },
+    };
+    const generator = new PageGenerator(config, database, unsafeProvider);
+    try {
+      await generator.generate(skill);
+      await generator.waitForIdle();
+      expect(generator.getStatus(skill.id)).toEqual([expect.objectContaining({ status: "failed", errorMessage: expect.stringContaining("inline event handlers") })]);
+      expect(generator.getActive(skill.id)).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
   it("pauses automatic work after an upstream failure and resumes it only when explicitly requested", async () => {
     const { config, database } = await createContext();
     const first = manifest();
