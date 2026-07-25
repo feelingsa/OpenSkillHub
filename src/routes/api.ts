@@ -364,7 +364,7 @@ export async function registerApiRoutes(
     if (!request.authenticatedUser) return reply.code(401).send({ error: "AUTHENTICATION_REQUIRED" });
     if (!Buffer.isBuffer(request.body)) return reply.code(400).send({ error: "INVALID_UPLOAD_BODY" });
     try {
-      const upload = await uploads.create(request.authenticatedUser.id, request.body, request.headers["x-upload-name"], request.headers["content-type"]);
+      const upload = await uploads.create(request.authenticatedUser.id, request.body, request.headers["x-upload-name"], request.headers["x-upload-mime"] ?? request.headers["content-type"]);
       database.appendAuditEvent({ userId: request.authenticatedUser.id, type: "upload.created", resourceId: upload.id, details: { sizeBytes: upload.sizeBytes } });
       return reply.code(201).send({ id: upload.id, displayName: upload.displayName, mimeType: upload.mimeType, sizeBytes: upload.sizeBytes, createdAt: upload.createdAt });
     } catch (error) {

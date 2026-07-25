@@ -55,6 +55,10 @@ describe("SkillScanner", () => {
       const first = await new SkillScanner(config, provider, database).sync();
       expect(first.total).toBe(1);
       expect(database.listSkills()[0]).toMatchObject({ id: "opencode--example", displayName: "example", assets: [{ name: "preview.svg", kind: "image" }] });
+      const firstHash = database.listSkills()[0].sourceHash;
+      await writeFile(path.join(skillDirectory, "SKILL.md"), "---\nname: example\ndescription: Updated Skill\n---\n# Example\n\n## Inputs\n- `title`: required title\n");
+      await new SkillScanner(config, provider, database).sync();
+      expect(database.listSkills()[0].sourceHash).not.toBe(firstHash);
 
       config.opencode.skillRoots = [path.join(testDirectory, "missing")];
       const second = await new SkillScanner(config, provider, database).sync();

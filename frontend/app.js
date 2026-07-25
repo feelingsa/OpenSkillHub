@@ -214,7 +214,7 @@ async function uploadInputFile(file) {
   if (!(file instanceof File)) throw new Error("请选择一个要上传的文件。");
   const response = await authenticatedFetch("/api/uploads", {
     method: "POST",
-    headers: { "Content-Type": file.type || "application/octet-stream", "X-Upload-Name": file.name },
+    headers: { "Content-Type": "application/octet-stream", "X-Upload-Name": file.name, "X-Upload-Mime": file.type || "application/octet-stream" },
     body: file,
   });
   const payload = await response.json().catch(() => ({}));

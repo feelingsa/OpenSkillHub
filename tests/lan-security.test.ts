@@ -52,7 +52,11 @@ describe("LAN security controls", () => {
       const bob = await login(app, "bob", "bob-password-longer");
 
       expect((await app.inject({ method: "GET", url: "/api/admin/overview", headers: { cookie: alice.cookie } })).statusCode).toBe(403);
+      expect((await app.inject({ method: "GET", url: "/api/skills/not-a-skill", headers: { cookie: alice.cookie } })).statusCode).toBe(404);
+      expect((await app.inject({ method: "GET", url: "/api/runs/not-a-run", headers: { cookie: alice.cookie } })).statusCode).toBe(404);
       expect((await app.inject({ method: "POST", url: "/api/uploads", headers: { cookie: alice.cookie, "content-type": "application/octet-stream", "x-upload-name": "private.txt" }, payload: Buffer.from("private") })).statusCode).toBe(403);
+      const oversized = await app.inject({ method: "POST", url: "/api/uploads", headers: { cookie: alice.cookie, "x-csrf-token": alice.csrfToken, "content-type": "application/octet-stream", "x-upload-name": "too-large.txt" }, payload: Buffer.alloc(1025) });
+      expect(oversized.statusCode).toBe(413);
 
       const uploaded = await app.inject({ method: "POST", url: "/api/uploads", headers: { cookie: alice.cookie, "x-csrf-token": alice.csrfToken, "content-type": "application/octet-stream", "x-upload-name": "private.txt" }, payload: Buffer.from("private") });
       expect(uploaded.statusCode).toBe(201);
