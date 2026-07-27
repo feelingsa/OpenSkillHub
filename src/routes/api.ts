@@ -10,6 +10,7 @@ import { RunService, RunQuotaError, RunValidationError } from "../runs/service.j
 import { StorageMaintenanceService } from "../storage/maintenance.js";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { FixedWindowRateLimiter } from "../security/rate-limiter.js";
 import { UploadService } from "../uploads/service.js";
 import type { ArtifactRecord, AuthenticatedUser, GeneratedPagePreset, GeneratedPageRecord, PublicSkillManifest, RunRecord, SkillManifest } from "../types.js";
@@ -168,6 +169,47 @@ export async function registerApiRoutes(
       skills: { total: skills.length, enabled: skills.filter((skill) => skill.enabled).length },
       pages: { queued: pagesList.filter((page) => page.status === "queued").length, generating: pagesList.filter((page) => page.status === "generating").length, failed: pagesList.filter((page) => page.status === "failed").length },
       runs: { active: runsList.filter((run) => ["created", "running", "waiting_question", "waiting_permission"].includes(run.status)).length, total: runsList.length },
+    };
+  });
+  app.get("/api/admin/network", { preHandler: requireAdmin }, async () => {
+    const interfaces = networkInterfaces();
+    const addresses = Object.entries(interfaces).flatMap(([name, entries]) => (entries ?? [])
+      .filter((entry) => entry.family === "IPv4" && !entry.internal)
+      .map((entry) => ({ name, address: entry.address, cidr: entry.cidr ?? null })));
+    const host = config.host === "0.0.0.0" || config.host === "::" ? "all LAN adapters" : config.host;
+    return {
+      host,
+      port: config.port,
+      authRequired: config.authRequired === true,
+      cookieSecure: config.cookieSecure === true,
+      urls: addresses.map(({ address }) => `http://${address}:${config.port}`),
+      addresses,
+      opencodeUrl: `${config.opencode.url.protocol}//${config.opencode.url.host}`,
+      opencodeLoopbackOnly: ["127.0.0.1", "localhost", "::1"].includes(config.opencode.url.hostname),
+    };
+  });
+  app.get("/api/admin/load", { preHandler: requireAdmin }, async () => {
+    const users = database.listUsers();
+    const runsList = database.listAllRuns(500);
+    const activeStatuses = new Set(["created", "running", "waiting_question", "waiting_permission"]);
+    const active = runsList.filter((run) => activeStatuses.has(run.status));
+    const userById = new Map(users.map((user) => [user.id, user]));
+    const byUser = [...new Map(active.map((run) => [run.ownerId, active.filter((item) => item.ownerId === run.ownerId)])).entries()]
+      .map(([ownerId, ownerRuns]) => ({
+        ownerId,
+        username: userById.get(ownerId)?.username ?? "unknown user",
+        activeRuns: ownerRuns.length,
+        waiting: ownerRuns.filter((run) => run.status === "waiting_question" || run.status === "waiting_permission").length,
+        latestRunAt: ownerRuns.map((run) => run.createdAt).sort().at(-1) ?? null,
+      }))
+      .sort((left, right) => right.activeRuns - left.activeRuns || left.username.localeCompare(right.username));
+    return {
+      capturedAt: new Date().toISOString(),
+      activeRuns: active.length,
+      waitingRuns: active.filter((run) => run.status === "waiting_question" || run.status === "waiting_permission").length,
+      enabledUsers: users.filter((user) => !user.disabled).length,
+      recentRuns: runsList.filter((run) => Date.now() - Date.parse(run.createdAt) < 60 * 60 * 1000).length,
+      byUser,
     };
   });
   app.get("/api/admin/providers", { preHandler: requireAdmin }, async () => [{ ...provider.getHealthSnapshot(), ...provider.getRuntimeInfo(), mode: config.opencode.mode }]);

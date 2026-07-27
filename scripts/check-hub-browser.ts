@@ -33,6 +33,7 @@ let browserRunDirectory = "";
 const config: HubConfig = {
   projectRoot, host: "127.0.0.1", port: 0, databasePath: path.join(temporaryDirectory, "hub.db"), skillSyncIntervalMs: 60000, runTimeoutMs: 60000, logLevel: "fatal", authRequired: true,
   admin: { username: "browser-admin", password: "browser-admin-password", sessionTtlMs: 60000 },
+  initialUser: { username: "browser-user", password: "browser-user-password" },
   opencode: { mode: "connect", url: new URL("http://127.0.0.1:1"), command: "opencode", args: [], workingDirectory: projectRoot, configDirectory: path.join(temporaryDirectory, "config"), dataDirectory: path.join(temporaryDirectory, "data"), lockFilePath: path.join(temporaryDirectory, "lock"), logFilePath: path.join(temporaryDirectory, "log"), startTimeoutMs: 1000, skillRoots: [] },
 };
 const manifest: SkillManifest = {
@@ -61,6 +62,18 @@ try {
   await page.fill("#adminLoginForm [name='password']", "browser-admin-password");
   await page.click("#adminLoginForm button[type='submit']");
   await page.waitForURL(`http://127.0.0.1:${address.port}/admin`);
+  await page.goto(`http://127.0.0.1:${address.port}/admin/network`, { waitUntil: "networkidle" });
+  await page.waitForSelector(".admin-address-list, .network-guidance");
+  await page.goto(`http://127.0.0.1:${address.port}/admin/load`, { waitUntil: "networkidle" });
+  await page.waitForSelector("#refreshLoad");
+  const userContext = await browser.newContext({ viewport });
+  const userPage = await userContext.newPage();
+  await userPage.goto(`http://127.0.0.1:${address.port}/login`, { waitUntil: "networkidle" });
+  await userPage.fill("#adminLoginForm [name='username']", "browser-user");
+  await userPage.fill("#adminLoginForm [name='password']", "browser-user-password");
+  await userPage.click("#adminLoginForm button[type='submit']");
+  await userPage.waitForURL(`http://127.0.0.1:${address.port}/`);
+  await userContext.close();
   await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "networkidle" });
   await page.waitForSelector("#skillDeck [data-card]");
   const catalogCardCount = await page.locator("#skillDeck [data-card]").count();

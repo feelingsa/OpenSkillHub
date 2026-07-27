@@ -464,3 +464,13 @@ GET /api/artifacts/:artifactId/download
 - [x] Keep all seven administration routes on the source-derived dark console frame and refresh the `1440 x 900` overview baseline.
 - [x] Introduce generated-page contract v2, enforce the shared dark token theme at validation time, and migrate persisted generated pages.
 - [x] Verify with typecheck, automated tests, browser flow tests, source audit, live user-workbench inspection, and the refreshed administrator screenshot.
+
+# Source Folder Refresh (2026-07-27)
+
+- [x] Replace the old three-board design audit with the current source folder: one palette board, five user boards, and five administrator boards.
+- [x] Map U01 to the shared login route. The form does not expose a role selector; the authenticated server session decides whether to open `/` or `/admin`.
+- [x] Keep U02 as the card-stack Skill discovery surface and keep U03-U05 on the existing Skill operation, run-state, and artifact-detail routes.
+- [x] Map A01 to `/admin/users`, A03 to `/admin/providers`, and A05 to `/admin/skills` plus the existing page-generation controls.
+- [x] Add A02 network management at `/admin/network`, including detected IPv4 LAN URLs, listener settings, OpenCode exposure state, and sharing guidance.
+- [x] Add A04 live user run load at `/admin/load`, including active runs, waiting interactions, enabled users, per-user load, manual refresh, and a ten-second refresh cadence.
+- [x] Verify typecheck, unit/integration tests, browser flow tests, source audit, and production build.

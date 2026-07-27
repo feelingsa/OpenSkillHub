@@ -1,18 +1,24 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const sourceDirectory = path.resolve("source");
 const expectedFiles = [
-  "Skill Web Hub — 用户端.svg",
-  "Skill Web Hub — 管理端.svg",
-  "Skill Web Hub — 配色.svg",
+  "整体配色/Skill Web Hub — 配色.svg",
+  "用户界面/U01 · 用户登录.svg",
+  "用户界面/U02 · 发现 Skill.svg",
+  "用户界面/U03 · Skill 详情与运行.svg",
+  "用户界面/U04 · 运行状态.svg",
+  "用户界面/U05 · 产物下载.svg",
+  "管理员界面/A01 · 用户管理.svg",
+  "管理员界面/A02 · 网络管理.svg",
+  "管理员界面/A03 · Agent 连接.svg",
+  "管理员界面/A04 · 实时用户运行负载.svg",
+  "管理员界面/A05 · 技能库管理.svg",
 ];
 
 function getSvgDimensions(svg) {
   const match = svg.match(/<svg\b[^>]*\bwidth="(\d+)"[^>]*\bheight="(\d+)"[^>]*>/i);
-  if (!match) return null;
-
-  return { width: Number(match[1]), height: Number(match[2]) };
+  return match ? { width: Number(match[1]), height: Number(match[2]) } : null;
 }
 
 function getColors(svg) {
@@ -21,17 +27,16 @@ function getColors(svg) {
     .sort();
 }
 
-const discoveredFiles = new Set(await readdir(sourceDirectory));
 let failed = false;
-
 for (const filename of expectedFiles) {
-  if (!discoveredFiles.has(filename)) {
+  let svg;
+  try {
+    svg = await readFile(path.join(sourceDirectory, filename), "utf8");
+  } catch {
     console.error(`Missing design source: ${filename}`);
     failed = true;
     continue;
   }
-
-  const svg = await readFile(path.join(sourceDirectory, filename), "utf8");
   const dimensions = getSvgDimensions(svg);
   const colors = getColors(svg);
   if (!dimensions || colors.length === 0) {
@@ -39,7 +44,6 @@ for (const filename of expectedFiles) {
     failed = true;
     continue;
   }
-
   console.log(`${filename}: ${dimensions.width}x${dimensions.height}; ${colors.length} colors`);
 }
 

@@ -7,8 +7,9 @@ const isAdminRoute = window.location.pathname.startsWith("/admin");
 const isLoginRoute = window.location.pathname === "/login";
 
 const navItems = [
-  ["/admin", "Overview"], ["/admin/providers", "Providers"], ["/admin/skills", "Skills"],
-  ["/admin/page-generation", "Page generation"], ["/admin/runs", "Runs"], ["/admin/users", "Users"], ["/admin/storage", "Storage"],
+  ["/admin", "系统总览"], ["/admin/users", "用户管理"], ["/admin/network", "网络管理"],
+  ["/admin/providers", "Agent 连接"], ["/admin/load", "实时运行负载"], ["/admin/skills", "技能库管理"],
+  ["/admin/page-generation", "页面生成"], ["/admin/runs", "运行记录"], ["/admin/storage", "存储与备份"],
 ];
 
 function escapeHtml(value) {
@@ -31,7 +32,7 @@ async function api(url, options = {}) {
 
 function renderLogin(message = "") {
   root.hidden = false;
-  root.innerHTML = `<section class="auth-shell"><div class="auth-intro"><p>LOCAL OPENCODE / LAN SERVICE</p><h1>SKILL<br>WEB HUB</h1><span>AUTHENTICATED WORKSPACE</span></div><div class="auth-panel"><p class="admin-eyebrow">ACCOUNT ACCESS</p><h2>Sign in</h2><p>Use the account created for this Hub.</p><form id="adminLoginForm"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">Sign in</button></form></div></section>`;
+  root.innerHTML = `<section class="auth-shell source-login-shell"><div class="auth-intro"><p>SKILL WEB HUB / LOCAL NETWORK</p><h1>SKILL<br>WEB HUB</h1><span>DISCOVER · RUN · COLLECT</span><div class="auth-intro-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div><div class="auth-panel"><p class="admin-eyebrow">账户登录</p><h2>欢迎回来</h2><p>登录后会根据账号权限自动进入用户工作台或管理控制台。</p><form id="adminLoginForm"><label>用户名<input name="username" autocomplete="username" required autofocus></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">登录 Skill Web Hub</button></form><small class="auth-route-note">管理员与普通用户使用同一个登录入口。</small></div></section>`;
   root.querySelector("form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -71,6 +72,28 @@ async function renderProviders(session) {
   shell("Providers", `<section class="admin-panel"><div class="admin-panel-heading"><h2>OpenCode connection</h2><div class="admin-toolbar"><button id="showProviderLogs" class="admin-inline-action">View redacted logs</button><button id="testProvider">Run health check</button></div></div>${table(["Provider", "State", "Mode", "Last checked", "Capabilities"], providers.map((provider) => `<tr><td>${escapeHtml(provider.provider)}</td><td>${valueStatus(provider.status)}</td><td>${escapeHtml(provider.mode)}</td><td>${escapeHtml(new Date(provider.checkedAt).toLocaleString())}</td><td>${escapeHtml((provider.capabilities || []).join(", ") || "Not reported")}</td></tr>`).join(""))}<pre id="providerLogs" class="admin-log" hidden></pre></section>`, session);
   root.querySelector("#testProvider").addEventListener("click", async () => { setNotice("Checking..."); try { const state = await api("/api/admin/providers/opencode/test", { method: "POST" }); setNotice(`Provider is ${state.status}`, "success"); } catch { setNotice("Health check failed", "error"); } });
   root.querySelector("#showProviderLogs").addEventListener("click", async () => { const logPanel = root.querySelector("#providerLogs"); const result = await api("/api/admin/providers/opencode/logs"); logPanel.hidden = false; logPanel.textContent = result.lines.join("\n") || "No managed OpenCode log entries are available."; });
+}
+
+async function renderNetwork(session) {
+  shell("网络管理", `<section class="admin-panel admin-loading" aria-busy="true">正在读取网络配置...</section>`, session);
+  const network = await api("/api/admin/network");
+  const addressRows = network.addresses.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td><code>${escapeHtml(item.address)}</code></td><td>${escapeHtml(item.cidr || "-")}</td><td><a class="admin-inline-action admin-link-button" href="http://${escapeHtml(item.address)}:${network.port}" target="_blank" rel="noreferrer">打开 Hub</a></td></tr>`).join("");
+  shell("网络管理", `<div class="admin-metrics"><article><span>监听地址</span><strong>${escapeHtml(network.host)}</strong><small>端口 ${network.port}</small></article><article><span>局域网地址</span><strong>${network.addresses.length}</strong><small>已检测网卡</small></article><article><span>登录保护</span><strong>${network.authRequired ? "启用" : "关闭"}</strong><small>局域网推荐保持启用</small></article><article><span>OpenCode</span><strong>${network.opencodeLoopbackOnly ? "本机" : "远程"}</strong><small>${escapeHtml(network.opencodeUrl)}</small></article></div><section class="admin-panel"><div class="admin-panel-heading"><h2>可访问地址</h2><span class="admin-muted">将下列地址提供给局域网用户</span></div><div class="admin-address-list">${network.urls.map((url) => `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`).join("") || "<span class=\"admin-muted\">未检测到可用的 IPv4 局域网地址。</span>"}</div></section><section class="admin-panel"><div class="admin-panel-heading"><h2>网络接口</h2><span class="admin-muted">服务当前绑定到 ${escapeHtml(network.host)}</span></div>${table(["接口", "IPv4 地址", "子网", "操作"], addressRows)}</section><section class="admin-panel network-guidance"><h2>共享前检查</h2><ol><li>保持 OpenCode 仅绑定本机，Hub 才是唯一的局域网入口。</li><li>在 Windows 私有网络防火墙中放行 Hub 端口 ${network.port}。</li><li>面向长期使用时，请通过内部 HTTPS 反向代理并启用安全 Cookie。</li></ol></section>`, session);
+}
+
+async function renderLoad(session) {
+  shell("实时用户运行负载", `<section class="admin-panel admin-loading" aria-busy="true">正在汇总当前运行负载...</section>`, session);
+  const render = async () => {
+    const load = await api("/api/admin/load");
+    const rows = load.byUser.map((item) => `<tr><td><strong>${escapeHtml(item.username)}</strong></td><td>${item.activeRuns}</td><td>${item.waiting}</td><td>${item.latestRunAt ? escapeHtml(new Date(item.latestRunAt).toLocaleString("zh-CN")) : "-"}</td></tr>`).join("");
+    shell("实时用户运行负载", `<div class="admin-metrics"><article><span>活动运行</span><strong>${load.activeRuns}</strong><small>正在执行或等待交互</small></article><article><span>等待处理</span><strong>${load.waitingRuns}</strong><small>问题或权限确认</small></article><article><span>启用用户</span><strong>${load.enabledUsers}</strong><small>可访问 Hub</small></article><article><span>最近一小时</span><strong>${load.recentRuns}</strong><small>创建的运行</small></article></div><section class="admin-panel"><div class="admin-panel-heading"><h2>按用户的活动负载</h2><div class="admin-toolbar"><span class="admin-muted">更新于 ${escapeHtml(new Date(load.capturedAt).toLocaleTimeString("zh-CN"))}</span><button id="refreshLoad" class="admin-inline-action">刷新</button></div></div>${table(["用户", "活动运行", "等待交互", "最近创建"], rows)}</section><section class="admin-panel load-note"><h2>运行状态说明</h2><p>此页每 10 秒自动更新。结束的运行保存在“运行记录”，管理员可以从那里终止仍在运行的任务。</p></section>`, session);
+    root.querySelector("#refreshLoad")?.addEventListener("click", () => void render());
+  };
+  await render();
+  const timer = window.setInterval(() => {
+    if (window.location.pathname === "/admin/load") void render().catch(() => undefined);
+    else window.clearInterval(timer);
+  }, 10000);
 }
 
 async function renderSkills(session) {
@@ -173,7 +196,7 @@ async function init() {
     return;
   }
   const route = window.location.pathname;
-  const renderers = { "/admin": renderOverview, "/admin/providers": renderProviders, "/admin/skills": renderSkills, "/admin/page-generation": renderPages, "/admin/runs": renderRuns, "/admin/users": renderUsers, "/admin/storage": renderStorage };
+  const renderers = { "/admin": renderOverview, "/admin/users": renderUsers, "/admin/network": renderNetwork, "/admin/providers": renderProviders, "/admin/load": renderLoad, "/admin/skills": renderSkills, "/admin/page-generation": renderPages, "/admin/runs": renderRuns, "/admin/storage": renderStorage };
   try { await (renderers[route] || renderOverview)(session); } catch (error) { if (error.status === 401) renderLogin(); else { root.hidden = false; root.innerHTML = `<section class="admin-error-state"><h1>Management data is unavailable</h1><p>Refresh after the service is available.</p></section>`; } }
 }
 

@@ -71,6 +71,11 @@ button {
 .admin-log { max-height: 300px; overflow: auto; margin: 18px 0 0; padding: 14px; border: 1px solid var(--hub-color-border); background: #080a0e; color: var(--hub-color-text-secondary); font: 12px/1.5 var(--hub-font-mono); white-space: pre-wrap; }
 .admin-preset { max-width: 6.8rem; padding: 6px; border: 1px solid var(--hub-color-border); border-radius: var(--hub-radius-sm); background: #080a0e; color: var(--hub-color-text-primary); font-size: 12px; }
 .admin-user-form { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1fr) minmax(8rem, .6fr) auto; gap: 12px; align-items: end; }.admin-user-form label { display: grid; gap: 7px; color: var(--hub-color-text-secondary); font-size: 13px; }.admin-user-form input, .admin-user-form select { padding: 9px; border: 1px solid var(--hub-color-border); border-radius: var(--hub-radius-sm); background: #080a0e; color: var(--hub-color-text-primary); }
+.admin-address-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.admin-address-list a { padding: 14px; border: 1px solid var(--hub-color-border); background: var(--hub-color-canvas); color: var(--hub-color-info); font: 13px var(--hub-font-mono); text-decoration: none; }
+.admin-address-list a:hover { border-color: var(--hub-color-info); background: color-mix(in srgb, var(--hub-color-info), transparent 92%); }
+.network-guidance ol { margin: 15px 0 0; padding-left: 20px; color: var(--hub-color-text-secondary); line-height: 1.9; }
+.load-note p { margin: 12px 0 0; color: var(--hub-color-text-secondary); line-height: 1.65; }
 
 .hub-shell {
   display: grid;
@@ -975,6 +980,16 @@ h1 {
 .auth-panel label { display: grid; gap: 8px; color: var(--hub-color-text-secondary); font: 12px var(--hub-font-mono); }
 .auth-panel input { height: 42px; padding: 0 12px; border: 1px solid var(--hub-color-border); border-radius: 3px; background: var(--hub-color-surface); color: var(--hub-color-text-primary); }
 .auth-panel button { height: 42px; border: 1px solid var(--hub-color-info); border-radius: 3px; background: var(--hub-color-info); color: #051116; cursor: pointer; font-weight: 800; }
+.source-login-shell { grid-template-columns: minmax(0, 1.04fr) minmax(430px, 0.96fr); }
+.source-login-shell .auth-intro { position: relative; overflow: hidden; padding: 0 12vw; }
+.source-login-shell .auth-intro::after { position: absolute; inset: 18% 8% 17% auto; width: min(34vw, 460px); border: 1px solid color-mix(in srgb, var(--hub-color-info), transparent 67%); background: linear-gradient(135deg, color-mix(in srgb, var(--hub-color-info), transparent 94%), transparent 70%); content: ""; transform: skewY(-12deg); }
+.source-login-shell .auth-intro h1 { position: relative; z-index: 1; margin: 22px 0 28px; font-size: 82px; }
+.source-login-shell .auth-intro-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4, 9px); gap: 7px; margin-top: 54px; pointer-events: none; }
+.source-login-shell .auth-intro-grid i { height: 9px; border: 1px solid var(--hub-color-border); background: var(--hub-color-surface-raised); }
+.source-login-shell .auth-intro-grid i:first-child, .source-login-shell .auth-intro-grid i:last-child { background: var(--hub-color-info); box-shadow: 0 0 14px color-mix(in srgb, var(--hub-color-info), transparent 40%); }
+.source-login-shell .auth-panel { position: relative; max-width: 520px; padding: 82px 74px; }
+.source-login-shell .auth-panel::before { position: absolute; top: 88px; left: 0; width: 42px; height: 2px; background: var(--hub-color-info); content: ""; }
+.auth-route-note { margin-top: 18px; color: var(--hub-color-text-muted); font: 11px/1.6 var(--hub-font-mono); }
 
 /* Align all administration routes with the management boards' dense desktop console language. */
 .admin-root { background: var(--hub-color-canvas); }
