@@ -60,21 +60,20 @@ function showUserSession(session) {
 
 function renderUserWorkspace({ eyebrow, title, description, section, body }) {
   const username = activeSession?.username || "";
-  return `<section class="user-workspace">
+  return `<section class="user-workspace user-workspace-${escapeHtml(section)}">
+    <a class="user-workspace-logo" href="/">SKILL WEB HUB</a>
     <aside class="user-workspace-rail">
-      <a class="user-workspace-brand" href="/"><span>LOCAL OPENCODE</span>SKILL<br>WEB HUB</a>
-      <nav class="user-workspace-nav" aria-label="用户端导航">
-        <a href="/" class="${section === "catalog" ? "is-current" : ""}"><span>01</span>Skill catalog</a>
-        <a href="/runs" class="${section === "runs" ? "is-current" : ""}"><span>02</span>Run history</a>
+      <span class="user-workspace-rail-label">WORKSPACE</span>
+      <nav class="user-workspace-nav" aria-label="用户工作区">
+        <a href="/" class="${section === "catalog" ? "is-current" : ""}">发现 Skill</a>
+        <a href="/runs" class="${section === "runs" ? "is-current" : ""}">运行状态</a>
+        <a href="/runs">产物中心</a>
       </nav>
-      <div class="user-workspace-rail-footer"><span>SESSION</span><strong>${escapeHtml(username)}</strong></div>
+      <div class="user-workspace-rail-footer"><span class="workspace-status-dot"></span><strong>${escapeHtml(username || "LOCAL USER")}</strong><small>局域网服务在线</small></div>
     </aside>
     <main class="user-workspace-main">
-      <header class="user-workspace-topbar">
-        <div><p>${escapeHtml(eyebrow)}</p><h1 class="user-workspace-title">${escapeHtml(title)}</h1></div>
-        <div class="user-workspace-status"><span class="workspace-status-dot"></span><span>CONNECTED HUB</span></div>
-      </header>
-      <div class="user-workspace-content"><p class="user-workspace-description">${escapeHtml(description)}</p>${body}</div>
+      <header class="user-workspace-topbar"><div><p>${escapeHtml(eyebrow)}</p><h1 class="user-workspace-title">${escapeHtml(title)}</h1><span class="user-workspace-description">${escapeHtml(description)}</span></div><div class="user-workspace-status">LOCAL NETWORK</div></header>
+      <div class="user-workspace-content">${body}</div>
     </main>
   </section>`;
 }

@@ -9,57 +9,36 @@
   </head>
   <body>
     <main class="hub-shell">
-      <header class="hero-header">
-        <p class="kicker">LOCAL OPENCODE</p>
-        <h1>SKILL WEB HUB</h1>
-        <div id="connectionState" class="connection-state">CONNECTING</div>
-        <div id="userSessionActions" class="user-session-actions" hidden>
-          <span id="userSessionName"></span>
-          <a id="adminConsoleLink" href="/admin" hidden>管理</a>
-          <button id="userLogoutButton" type="button">退出</button>
-        </div>
+      <aside class="catalog-rail">
+        <a class="catalog-brand" href="/">SKILL WEB HUB</a>
+        <nav class="catalog-nav" aria-label="Workspace">
+          <span>WORKSPACE</span>
+          <a href="/" class="is-current">发现 Skill</a>
+          <a href="/runs">运行状态</a>
+          <a href="/runs">产物中心</a>
+        </nav>
         <div class="catalog-controls" aria-label="Skill catalog filters">
-          <label class="catalog-search">
-            <span class="sr-only">搜索 Skill</span>
-            <input id="skillSearch" type="search" autocomplete="off" placeholder="搜索 Skill" />
-          </label>
-          <label class="catalog-filter">
-            <span class="sr-only">页面状态</span>
-            <select id="skillFilter">
-              <option value="all">全部状态</option>
-              <option value="ready">页面已就绪</option>
-              <option value="pending">需要生成页面</option>
-            </select>
-          </label>
+          <label class="catalog-search"><span class="sr-only">搜索 Skill</span><input id="skillSearch" type="search" autocomplete="off" placeholder="搜索 Skill..." /></label>
+          <label class="catalog-filter"><span class="sr-only">页面状态</span><select id="skillFilter"><option value="all">全部 Skill</option><option value="ready">页面已就绪</option><option value="pending">等待生成</option></select></label>
         </div>
-      </header>
-
-      <section class="preview-stage" aria-label="OpenCode skills preview">
-        <div id="skillDeck" class="skill-deck" tabindex="0" aria-label="Mouse wheel switches skill windows"></div>
+        <div class="catalog-rail-status"><div id="connectionState" class="connection-state">CONNECTING</div><span>局域网服务在线</span></div>
+        <div id="userSessionActions" class="user-session-actions" hidden><span id="userSessionName"></span><a id="adminConsoleLink" href="/admin" hidden>管理控制台</a><button id="userLogoutButton" type="button">退出</button></div>
+      </aside>
+      <section class="catalog-main">
+        <header class="catalog-header"><div><p class="kicker">SKILL WEB HUB</p><h1>发现 Skill</h1><p>浏览已发布的 Skill，选择后进入可视化运行页面</p></div><span class="catalog-network">LOCAL NETWORK</span></header>
+        <section class="preview-stage" aria-label="OpenCode skills preview"><div id="skillDeck" class="skill-deck" tabindex="0" aria-label="Mouse wheel switches skill windows"></div></section>
       </section>
 
       <div id="skillModal" class="skill-modal" aria-hidden="true">
         <article class="skill-modal-window" role="dialog" aria-modal="true" aria-labelledby="skillModalTitle">
           <div id="skillModalHero" class="skill-modal-hero"></div>
-          <section class="skill-modal-body">
-            <h2 id="skillModalTitle"></h2>
-            <div id="skillModalContent" class="skill-modal-content"></div>
-            <footer class="skill-modal-actions">
-              <button id="skillStartButton" class="skill-start-button" type="button">开始</button>
-            </footer>
-          </section>
+          <section class="skill-modal-body"><h2 id="skillModalTitle"></h2><div id="skillModalContent" class="skill-modal-content"></div><footer class="skill-modal-actions"><button id="skillStartButton" class="skill-start-button" type="button">开始运行</button></footer></section>
         </article>
       </div>
-
     </main>
 
     <main id="adminRoot" class="admin-root" hidden></main>
-
-    <section id="skillPage" class="skill-page" hidden>
-      <a class="skill-page-back" href="/">返回 Skill 目录</a>
-      <div id="skillPageContent" class="skill-page-content" aria-live="polite"></div>
-    </section>
-
+    <section id="skillPage" class="skill-page" hidden><a class="skill-page-back" href="/">返回 Skill 目录</a><div id="skillPageContent" class="skill-page-content" aria-live="polite"></div></section>
     <script src="/admin.js" type="module"></script>
     <script src="/app.js" type="module"></script>
   </body>

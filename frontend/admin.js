@@ -31,8 +31,9 @@ async function api(url, options = {}) {
 }
 
 function renderLogin(message = "") {
+  root.classList.add("login-root");
   root.hidden = false;
-  root.innerHTML = `<section class="auth-shell source-login-shell"><div class="auth-intro"><p>SKILL WEB HUB / LOCAL NETWORK</p><h1>SKILL<br>WEB HUB</h1><span>DISCOVER · RUN · COLLECT</span><div class="auth-intro-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div><div class="auth-panel"><p class="admin-eyebrow">账户登录</p><h2>欢迎回来</h2><p>登录后会根据账号权限自动进入用户工作台或管理控制台。</p><form id="adminLoginForm"><label>用户名<input name="username" autocomplete="username" required autofocus></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">登录 Skill Web Hub</button></form><small class="auth-route-note">管理员与普通用户使用同一个登录入口。</small></div></section>`;
+  root.innerHTML = `<section class="auth-shell source-login-shell"><div class="auth-intro"><p>LOCAL / OPEN SKILLS</p><h1>SKILL WEB HUB</h1><span>DISCOVER · RUN · COLLECT</span><div class="auth-intro-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div><div class="auth-panel"><p class="admin-eyebrow">账户登录</p><h2>登录到本地工作区</h2><p>登录后会根据账号权限自动进入用户工作台或管理控制台。</p><form id="adminLoginForm"><label>用户名<input name="username" autocomplete="username" required autofocus></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><p class="admin-error" role="alert">${escapeHtml(message)}</p><button type="submit">进入 Skill Hub</button></form><small class="auth-route-note">管理员与普通用户使用同一个登录入口。</small></div></section>`;
   root.querySelector("form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -48,9 +49,10 @@ function valueStatus(status) { return `<span class="admin-status status-${escape
 function table(headers, rows) { return `<div class="admin-table-wrap"><table class="admin-table"><thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}" class="admin-empty">No records.</td></tr>`}</tbody></table></div>`; }
 
 function shell(title, body, session) {
+  root.classList.remove("login-root");
   adminMotion?.revert();
   root.hidden = false;
-  root.innerHTML = `<aside class="admin-sidebar"><a class="admin-brand" href="/admin">SKILL<br>WEB HUB</a><nav>${navItems.map(([href, label]) => `<a href="${href}" class="${window.location.pathname === href ? "is-current" : ""}">${label}</a>`).join("")}</nav><div class="admin-sidebar-footer"><span>${escapeHtml(session.username)}</span><button id="adminLogout" class="admin-quiet-button">Sign out</button><a href="/">Open user Hub</a></div></aside><section class="admin-workspace"><header class="admin-topbar"><div><p class="admin-eyebrow">ADMIN CONSOLE</p><h1>${escapeHtml(title)}</h1></div><div id="adminNotice" role="status"></div></header><div class="admin-content">${body}</div></section>`;
+  root.innerHTML = `<aside class="admin-sidebar"><a class="admin-brand" href="/admin"><strong>SKILL HUB</strong><em>ADMIN</em></a><span class="admin-plane-label">CONTROL PLANE</span><nav>${navItems.map(([href, label]) => `<a href="${href}" class="${window.location.pathname === href ? "is-current" : ""}">${label}</a>`).join("")}</nav><div class="admin-sidebar-footer"><span class="admin-health-dot"></span><strong>服务健康</strong><small>${escapeHtml(session.username)}</small><button id="adminLogout" class="admin-quiet-button">退出</button><a href="/">打开用户端</a></div></aside><section class="admin-workspace"><header class="admin-topbar"><div><p class="admin-eyebrow">CONTROL PLANE</p><h1>${escapeHtml(title)}</h1><span>管理局域网成员、运行状态与 Skill 服务</span></div><div><div class="admin-network-badge">LOCAL NETWORK</div><div id="adminNotice" role="status"></div></div></header><div class="admin-content">${body}</div></section>`;
   root.querySelector("#adminLogout").addEventListener("click", async () => { await api("/api/auth/logout", { method: "POST" }); window.location.assign("/login"); });
   adminMotion = createMotionScope(root);
   adminMotion.enter(root.querySelector(".admin-workspace"));
@@ -60,7 +62,7 @@ function shell(title, body, session) {
 function setNotice(message, kind = "") { const element = root.querySelector("#adminNotice"); if (element) element.innerHTML = `<span class="admin-notice ${kind}">${escapeHtml(message)}</span>`; }
 
 async function renderOverview(session) {
-  shell("System overview", `<section class="admin-panel admin-loading" aria-busy="true">Loading system status...</section>`, session);
+  shell("系统总览", `<section class="admin-panel admin-loading" aria-busy="true">正在加载系统状态...</section>`, session);
   const [data, audit] = await Promise.all([api("/api/admin/overview"), api("/api/admin/audit")]);
   const auditRows = audit.slice(0, 8).map((event) => `<tr><td>${escapeHtml(new Date(event.createdAt).toLocaleString())}</td><td>${escapeHtml(event.type)}</td><td>${escapeHtml(event.resourceId || "-")}</td></tr>`).join("");
   shell("System overview", `<div class="admin-metrics"><article><span>Provider</span><strong>${escapeHtml(data.provider.status)}</strong><small>${escapeHtml(data.provider.provider)}</small></article><article><span>Skills</span><strong>${data.skills.enabled} / ${data.skills.total}</strong><small>enabled</small></article><article><span>Pages</span><strong>${data.pages.queued + data.pages.generating}</strong><small>queue active</small></article><article><span>Runs</span><strong>${data.runs.active}</strong><small>active of ${data.runs.total}</small></article></div><section class="admin-panel"><h2>Service status</h2><dl class="admin-definition"><div><dt>Node</dt><dd>${escapeHtml(data.runtime.node)}</dd></div><div><dt>Scanner interval</dt><dd>${Math.round(data.runtime.scannerIntervalMs / 1000)} seconds</dd></div><div><dt>Artifacts</dt><dd>${data.storage.artifacts} files, ${Math.round(data.storage.artifactBytes / 1024)} KB</dd></div></dl></section><section class="admin-panel"><h2>Recent audit activity</h2>${table(["Time", "Action", "Resource"], auditRows)}</section>`, session);
