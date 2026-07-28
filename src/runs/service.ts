@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import type { ArtifactService } from "../artifacts/service.js";
@@ -15,6 +15,8 @@ const localOwnerId = "local-default";
 export interface RunProvider {
   getHealthSnapshot(): ReturnType<OpenCodeProvider["getHealthSnapshot"]>;
   startRun(options: { title: string; prompt: string; directory: string; onEvent: (event: OpenCodeServerEvent) => void }): Promise<OpenCodeRunHandle>;
+  continueRun?(options: { sessionId: string; prompt: string; directory: string; onEvent: (event: OpenCodeServerEvent) => void }): Promise<OpenCodeRunHandle>;
+  deleteSession?(sessionId: string): Promise<void>;
   replyToQuestion(requestId: string, answers: string[][]): Promise<void>;
   replyToPermission(requestId: string, reply: "once" | "always" | "reject"): Promise<void>;
 }
@@ -186,6 +188,49 @@ export class RunService {
     }
   }
 
+  async followUp(runId: string, message: unknown): Promise<RunRecord> {
+    const run = this.get(runId);
+    if (!run) throw new RunValidationError("Run was not found.");
+    if (run.status !== "completed" || !run.sessionId) throw new RunValidationError("This run is not ready for a follow-up message.");
+    if (this.activeRuns.has(run.id)) throw new RunValidationError("This run is already active.");
+    if (!this.provider.continueRun) throw new RunValidationError("The connected provider does not support follow-up messages.");
+    if (typeof message !== "string" || !message.trim()) throw new RunValidationError("A follow-up message is required.");
+    const prompt = message.trim();
+    if (prompt.length > 12000) throw new RunValidationError("The follow-up message exceeds the maximum length.");
+    if (this.provider.getHealthSnapshot().status !== "healthy") return await this.fail(run.id, "OpenCode is offline. The follow-up message was not started.");
+
+    const workspaceDirectory = path.join(this.config.projectRoot, "runtime", "runs", run.workspaceId);
+    const pendingProviderEvents: OpenCodeServerEvent[] = [];
+    let runReadyForEvents = false;
+    try {
+      const handle = await this.provider.continueRun({
+        sessionId: run.sessionId,
+        prompt,
+        directory: workspaceDirectory,
+        onEvent: (event) => {
+          if (runReadyForEvents) this.handleOpenCodeEvent(run.id, event);
+          else pendingProviderEvents.push(event);
+        },
+      });
+      const started = this.database.updateRun(run.id, { status: "running" });
+      if (!started) throw new Error(`Run ${run.id} was not persisted`);
+      const timeout = setTimeout(() => {
+        void this.abort(run.id, "Follow-up message timed out before OpenCode became idle.");
+      }, this.config.runTimeoutMs);
+      this.activeRuns.set(run.id, { handle, timeout });
+      this.publish(run.id, { type: "run.started" });
+      runReadyForEvents = true;
+      for (const event of pendingProviderEvents) this.handleOpenCodeEvent(run.id, event);
+      void handle.done.catch((error) => {
+        const current = this.get(run.id);
+        if (current && !terminalStatuses.has(current.status)) void this.fail(run.id, error instanceof Error ? error.message : "OpenCode event stream ended unexpectedly.");
+      });
+      return this.get(run.id) ?? started;
+    } catch (error) {
+      return await this.fail(run.id, error instanceof Error ? error.message : "OpenCode could not start the follow-up message.");
+    }
+  }
+
   get(runId: string): RunRecord | undefined {
     return this.database.getRun(runId);
   }
@@ -223,6 +268,19 @@ export class RunService {
     return updated;
   }
 
+  async delete(runId: string): Promise<boolean> {
+    const run = this.get(runId);
+    if (!run) return false;
+    if (!terminalStatuses.has(run.status)) await this.abort(runId, "Run deleted by the user.");
+    const current = this.get(runId) ?? run;
+    if (current.sessionId && this.provider.deleteSession) {
+      try { await this.provider.deleteSession(current.sessionId); } catch { /* Local deletion must complete even if OpenCode is offline. */ }
+    }
+    const workspaceDirectory = path.join(this.config.projectRoot, "runtime", "runs", current.workspaceId);
+    await rm(workspaceDirectory, { recursive: true, force: true, maxRetries: 2 });
+    return this.database.deleteRuns([runId]) > 0;
+  }
+
   async fail(runId: string, message: string): Promise<RunRecord> {
     const active = this.activeRuns.get(runId);
     if (active) {
@@ -258,15 +316,54 @@ export class RunService {
   private handleOpenCodeEvent(runId: string, event: OpenCodeServerEvent): void {
     const properties = event.properties ?? {};
     switch (event.type) {
+      case "message.part.updated": {
+        const part = properties.part;
+        if (!part || typeof part !== "object") return;
+        const value = part as { type?: unknown; text?: unknown; tool?: unknown; state?: { status?: unknown; input?: unknown; output?: unknown } };
+        if (value.type === "reasoning" && typeof value.text === "string") this.publish(runId, { type: "thinking.delta", text: value.text });
+        if (value.type === "tool") {
+          const tool = typeof value.tool === "string" ? value.tool : "tool";
+          const input = value.state?.input;
+          const command = typeof input === "string"
+            ? input
+            : input && typeof input === "object" && typeof (input as { command?: unknown }).command === "string"
+              ? (input as { command: string }).command
+              : undefined;
+          if (value.state?.status === "running" || value.state?.status === "pending") this.publish(runId, { type: "tool.started", tool });
+          if (command) this.publish(runId, { type: "terminal.command", command });
+          if (typeof value.state?.output === "string") this.publish(runId, { type: "terminal.output", text: value.state.output.slice(0, 6000) });
+        }
+        return;
+      }
+      case "session.status":
+        if (typeof properties.status === "string") this.publish(runId, { type: "provider.status", message: properties.status });
+        return;
+      case "session.next.reasoning.delta":
+        if (typeof properties.delta === "string") this.publish(runId, { type: "thinking.delta", text: properties.delta });
+        return;
       case "session.next.text.delta":
         if (typeof properties.delta === "string") this.publish(runId, { type: "message.delta", text: properties.delta });
         return;
       case "session.next.tool.called":
-        if (typeof properties.tool === "string") this.publish(runId, { type: "tool.started", tool: properties.tool });
+        {
+          const tool = typeof properties.tool === "string" ? properties.tool : typeof properties.name === "string" ? properties.name : "tool";
+          this.publish(runId, { type: "tool.started", tool });
+          const input = properties.input;
+          const command = typeof input === "string"
+            ? input
+            : input && typeof input === "object" && typeof (input as { command?: unknown }).command === "string"
+              ? (input as { command: string }).command
+              : undefined;
+          if (command) this.publish(runId, { type: "terminal.command", command });
+        }
         return;
       case "session.next.tool.success":
       case "session.next.tool.failed":
         this.publish(runId, { type: "tool.finished", tool: typeof properties.callID === "string" ? properties.callID : "tool" });
+        {
+          const output = typeof properties.output === "string" ? properties.output : typeof properties.result === "string" ? properties.result : undefined;
+          if (output) this.publish(runId, { type: "terminal.output", text: output.slice(0, 6000) });
+        }
         return;
       case "question.asked": {
         const questionId = typeof properties.id === "string" ? properties.id : undefined;
@@ -291,7 +388,9 @@ export class RunService {
         this.complete(runId);
         return;
       case "session.error":
-        void this.fail(runId, this.describeError(properties.error));
+        // OpenCode has emitted both `error` and `message` payloads across
+        // versions. Preserve whichever carries the upstream diagnostic.
+        void this.fail(runId, this.describeError(properties.error ?? properties.message));
         return;
       default:
         return;

@@ -1,4 +1,4 @@
-# 局域网发布
+# OpenSkillHub 局域网发布
 
 Hub 是唯一允许面向局域网的服务。OpenCode 必须始终监听 `127.0.0.1`，路由器不得配置任何公网端口转发。
 
@@ -29,26 +29,26 @@ https://skillhub.lan {
 }
 ```
 
-重启 Caddy 和 `SkillWebHub` 服务后，从另一台局域网设备访问 `https://skillhub.lan/login`。浏览器必须没有证书警告，且登录 cookie 应带 `Secure` 属性。
+重启 Caddy 和 `OpenSkillHub` 服务后，从另一台局域网设备访问 `https://skillhub.lan/login`。浏览器必须没有证书警告，且登录 cookie 应带 `Secure` 属性。
 
 ## 3. Windows 私有网络防火墙
 
 以管理员 PowerShell 仅为私有网络放行 HTTPS。Caddy 监听 443 时执行：
 
 ```powershell
-New-NetFirewallRule -DisplayName "Skill Web Hub HTTPS (Private)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 443 -Profile Private
+New-NetFirewallRule -DisplayName "OpenSkillHub HTTPS (Private)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 443 -Profile Private
 ```
 
 仅在临时受控测试中直连 Node 时，设置 `HUB_HOST=0.0.0.0` 并仅放行其端口：
 
 ```powershell
-New-NetFirewallRule -DisplayName "Skill Web Hub HTTP Test (Private)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5177 -Profile Private
+New-NetFirewallRule -DisplayName "OpenSkillHub HTTP Test (Private)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5177 -Profile Private
 ```
 
 直连 HTTP 不应传输真实账户或生产数据。完成 HTTPS 发布后删除临时规则：
 
 ```powershell
-Remove-NetFirewallRule -DisplayName "Skill Web Hub HTTP Test (Private)"
+Remove-NetFirewallRule -DisplayName "OpenSkillHub HTTP Test (Private)"
 ```
 
 ## 4. 验收和恢复

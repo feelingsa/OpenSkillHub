@@ -12,7 +12,7 @@
 
 ## 恢复步骤
 
-1. 停止 Skill Web Hub 服务，确认没有其他进程占用目标数据库。
+1. 停止 OpenSkillHub 服务，确认没有其他进程占用目标数据库。
 2. 将当前 `data/*.db` 和 `frontend/generated/` 复制到一个单独的、带日期的安全位置。
 3. 将备份目录中的 `hub.db` 复制到 `.env` 的 `HUB_DATA_PATH` 所指位置。
 4. 将备份目录中的 `generated-pages/` 内容复制回 `frontend/generated/`。

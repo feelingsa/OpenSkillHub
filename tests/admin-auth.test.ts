@@ -41,9 +41,19 @@ describe("administrator authentication", () => {
       const csrfToken = login.json().csrfToken as string;
       expect(cookie).toContain("skill_hub_session=");
 
+      const createdUser = await app.inject({
+        method: "POST",
+        url: "/api/admin/users",
+        headers: { cookie, "x-csrf-token": csrfToken },
+        payload: { username: "short-password-user", password: "x", role: "user" },
+      });
+      expect(createdUser.statusCode).toBe(201);
+      const shortPasswordLogin = await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "short-password-user", password: "x" } });
+      expect(shortPasswordLogin.statusCode).toBe(200);
+
       const overview = await app.inject({ method: "GET", url: "/api/admin/overview", headers: { cookie } });
       expect(overview.statusCode).toBe(200);
-      expect(overview.json()).toMatchObject({ runtime: { service: "skill-web-hub" }, skills: { total: 0 } });
+      expect(overview.json()).toMatchObject({ runtime: { service: "open-skill-hub" }, skills: { total: 0 } });
       expect(overview.body).not.toContain("127.0.0.1:1");
 
       const cleanupPreview = await app.inject({ method: "GET", url: "/api/admin/storage/cleanup/preview", headers: { cookie } });

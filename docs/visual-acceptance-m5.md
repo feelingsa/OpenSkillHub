@@ -1,4 +1,4 @@
-# M5 Desktop Visual Acceptance
+# M5 OpenSkillHub Desktop Visual Acceptance
 
 ## Evidence
 

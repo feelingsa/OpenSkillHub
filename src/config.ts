@@ -26,10 +26,10 @@ const envSchema = z.object({
   HUB_PAGE_PROMPT_VERSION: z.string().min(1).default("skill-page-contract-v2"),
   HUB_ADMIN_USERNAME: z.string().min(1).max(80).default("admin"),
   // This value deliberately works only for a local first boot. Replace it before LAN use.
-  HUB_ADMIN_PASSWORD: z.string().min(3).max(256).default("change-me-before-lan-use"),
+  HUB_ADMIN_PASSWORD: z.string().min(1).max(256).default("change-me-before-lan-use"),
   HUB_INITIAL_USER_USERNAME: z.string().min(3).max(80).optional(),
-  HUB_INITIAL_USER_PASSWORD: z.string().min(3).max(256).optional(),
-  HUB_PASSWORD_MIN_LENGTH: z.coerce.number().int().min(3).max(256).default(12),
+  HUB_INITIAL_USER_PASSWORD: z.string().min(1).max(256).optional(),
+  HUB_PASSWORD_MIN_LENGTH: z.coerce.number().int().min(1).max(256).default(1),
   HUB_SESSION_TTL_MS: z.coerce.number().int().min(60000).max(2592000000).default(86400000),
   HUB_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   HUB_AUTH_REQUIRED: z.enum(["true", "false"]).default("true"),

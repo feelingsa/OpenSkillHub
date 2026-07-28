@@ -1,7 +1,7 @@
 {
-  "name": "skill-web-hub",
+  "name": "open-skill-hub",
   "version": "0.1.0",
-  "description": "LAN-accessible OpenCode Skill Web Hub",
+  "description": "LAN-accessible OpenCode Skill platform",
   "private": true,
   "type": "module",
   "scripts": {

@@ -50,7 +50,7 @@ export class AdminAuthService {
     this.username = config.admin?.username ?? "admin";
     this.password = config.admin?.password ?? "change-me-before-lan-use";
     this.initialUser = config.initialUser;
-    this.passwordMinLength = config.passwordMinLength ?? 12;
+    this.passwordMinLength = config.passwordMinLength ?? 1;
     this.ttlMs = config.admin?.sessionTtlMs ?? 86400000;
   }
 

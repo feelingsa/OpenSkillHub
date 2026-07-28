@@ -142,7 +142,7 @@ export async function registerApiRoutes(
 
   app.get("/api/health", async () => ({
     status: "healthy",
-    service: "skill-web-hub",
+    service: "open-skill-hub",
     time: new Date().toISOString(),
     opencode: provider.getHealthSnapshot(),
   }));
@@ -164,7 +164,7 @@ export async function registerApiRoutes(
     const pagesList = database.listAllGeneratedPages(500);
     return {
       provider: provider.getHealthSnapshot(),
-      runtime: { node: process.version, service: "skill-web-hub", scannerIntervalMs: config.skillSyncIntervalMs },
+      runtime: { node: process.version, service: "open-skill-hub", scannerIntervalMs: config.skillSyncIntervalMs },
       storage: database.getAdminStorageSummary(),
       skills: { total: skills.length, enabled: skills.filter((skill) => skill.enabled).length },
       pages: { queued: pagesList.filter((page) => page.status === "queued").length, generating: pagesList.filter((page) => page.status === "generating").length, failed: pagesList.filter((page) => page.status === "failed").length },
@@ -227,6 +227,25 @@ export async function registerApiRoutes(
     const outcome = await scanner.sync();
     database.appendAuditEvent({ userId: request.adminSession!.id, type: "skill.scan_requested", details: { total: outcome.total } });
     return outcome;
+  });
+  app.post<{ Body: { skillIds?: unknown; enabled?: unknown } }>("/api/admin/skills/enabled/batch", { preHandler: requireAdmin }, async (request, reply) => {
+    const skillIds = request.body?.skillIds;
+    if (!Array.isArray(skillIds) || skillIds.length === 0 || skillIds.length > 500 || !skillIds.every((skillId) => typeof skillId === "string" && skillId.trim().length > 0)) {
+      return reply.code(400).send({ error: "INVALID_SKILL_IDS" });
+    }
+    if (typeof request.body?.enabled !== "boolean") return reply.code(400).send({ error: "INVALID_ENABLED_VALUE" });
+    const enabled = request.body.enabled;
+
+    const ids = [...new Set(skillIds.map((skillId) => skillId.trim()))];
+    if (ids.some((skillId) => !database.getSkill(skillId))) return reply.code(404).send({ error: "SKILL_NOT_FOUND" });
+
+    const updated = ids.map((skillId) => database.setSkillEnabled(skillId, enabled)!);
+    database.appendAuditEvent({
+      userId: request.adminSession!.id,
+      type: "skill.enabled_batch_changed",
+      details: { skillIds: ids, enabled },
+    });
+    return { skills: updated.map(toPublicManifest) };
   });
   app.post<{ Params: { skillId: string }; Body: { enabled?: unknown } }>("/api/admin/skills/:skillId/enabled", { preHandler: requireAdmin }, async (request, reply) => {
     if (typeof request.body?.enabled !== "boolean") return reply.code(400).send({ error: "INVALID_ENABLED_VALUE" });
@@ -308,7 +327,7 @@ export async function registerApiRoutes(
     return outcome;
   });
   app.get("/api/admin/diagnostics", { preHandler: requireAdmin }, async (_request, reply) => {
-    reply.type("application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=skill-web-hub-diagnostics.json");
+    reply.type("application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=open-skill-hub-diagnostics.json");
     return storage.diagnostics();
   });
   app.get("/api/admin/storage/backups", { preHandler: requireAdmin }, async () => storage.listBackups());
@@ -416,6 +435,19 @@ export async function registerApiRoutes(
 
   app.get("/api/runs", { preHandler: requireAuthenticated }, async (request) => runs.list(request.authenticatedUser?.id).map(toPublicRun));
 
+  app.post<{ Params: { runId: string }; Body: { message?: unknown } }>("/api/runs/:runId/followup", { preHandler: requireAuthenticated }, async (request, reply) => {
+    const existing = runs.get(request.params.runId);
+    if (!existing || !canAccessRun(existing, request.authenticatedUser)) return reply.code(404).send({ error: "RUN_NOT_FOUND" });
+    try {
+      const run = await runs.followUp(existing.id, request.body?.message);
+      if (request.authenticatedUser) database.appendAuditEvent({ userId: request.authenticatedUser.id, type: "run.followup_started", resourceId: run.id });
+      return reply.code(202).send(toPublicRun(run));
+    } catch (error) {
+      if (error instanceof RunValidationError) return reply.code(409).send({ error: "RUN_FOLLOWUP_UNAVAILABLE", message: error.message });
+      throw error;
+    }
+  });
+
   app.get<{ Params: { runId: string } }>("/api/runs/:runId", { preHandler: requireAuthenticated }, async (request, reply) => {
     const run = runs.get(request.params.runId);
     return run && canAccessRun(run, request.authenticatedUser) ? toPublicRun(run) : reply.code(404).send({ error: "RUN_NOT_FOUND" });
@@ -457,6 +489,15 @@ export async function registerApiRoutes(
     const run = await runs.abort(request.params.runId);
     if (run && request.authenticatedUser) database.appendAuditEvent({ userId: request.authenticatedUser.id, type: "run.aborted", resourceId: run.id });
     return run ? run : reply.code(404).send({ error: "RUN_NOT_FOUND" });
+  });
+
+  app.delete<{ Params: { runId: string } }>("/api/runs/:runId", { preHandler: requireAuthenticated }, async (request, reply) => {
+    const existing = runs.get(request.params.runId);
+    if (!existing || !canAccessRun(existing, request.authenticatedUser)) return reply.code(404).send({ error: "RUN_NOT_FOUND" });
+    const deleted = await runs.delete(existing.id);
+    if (!deleted) return reply.code(404).send({ error: "RUN_NOT_FOUND" });
+    if (request.authenticatedUser) database.appendAuditEvent({ userId: request.authenticatedUser.id, type: "run.deleted", resourceId: existing.id });
+    return reply.code(204).send();
   });
 
   app.get<{ Params: { runId: string } }>("/api/runs/:runId/artifacts", { preHandler: requireAuthenticated }, async (request, reply) => {

@@ -87,6 +87,10 @@ export type RunInputValues = Record<string, string | number | boolean>;
 export type RunEvent =
   | { type: "run.created" }
   | { type: "run.started" }
+  | { type: "thinking.delta"; text: string }
+  | { type: "terminal.command"; command: string }
+  | { type: "terminal.output"; text: string }
+  | { type: "provider.status"; message: string }
   | { type: "message.delta"; text: string }
   | { type: "tool.started"; tool: string }
   | { type: "tool.finished"; tool: string }

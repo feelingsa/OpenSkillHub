@@ -15,4 +15,4 @@ The desktop design source of truth is `node/source/`. Source SVGs are visual ref
 | `管理员界面/A04 · 实时用户运行负载.svg` | `/admin/load` | Active work, waiting interactions, and per-user load. |
 | `管理员界面/A05 · 技能库管理.svg` | `/admin/skills` | Scan, enablement, manifest inspection, and page generation. |
 
-The shared palette source is `整体配色/Skill Web Hub — 配色.svg`. Its tokens live in `frontend/styles/tokens.css`.
+The shared palette source is `整体配色/Skill Web Hub — 配色.svg` (a retained historical asset filename). Its tokens live in `frontend/styles/tokens.css`.

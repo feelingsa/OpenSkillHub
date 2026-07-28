@@ -136,7 +136,7 @@ describe("HTTP health and configuration status", () => {
     try {
       const healthResponse = await app.inject({ method: "GET", url: "/api/health" });
       expect(healthResponse.statusCode).toBe(200);
-      expect(healthResponse.json()).toMatchObject({ status: "healthy", service: "skill-web-hub" });
+      expect(healthResponse.json()).toMatchObject({ status: "healthy", service: "open-skill-hub" });
 
       const configResponse = await app.inject({ method: "GET", url: "/api/config/status" });
       expect(configResponse.statusCode).toBe(200);

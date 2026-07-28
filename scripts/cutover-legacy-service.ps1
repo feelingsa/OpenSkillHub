@@ -1,6 +1,6 @@
 param(
   [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-  [string]$ServiceName = "SkillWebHub",
+  [string]$ServiceName = "OpenSkillHub",
   [int]$ProductionPort = 5177,
   [int]$LegacyProcessId = 0,
   [switch]$Apply
@@ -28,7 +28,7 @@ function Get-HubHealth([int]$Port) {
 }
 
 $currentHealth = Get-HubHealth $ProductionPort
-if ($currentHealth -and $currentHealth.service -eq "skill-web-hub") {
+if ($currentHealth -and $currentHealth.service -eq "open-skill-hub") {
   Write-Output "Node Hub is already active on port $ProductionPort. No legacy shutdown is needed."
   exit 0
 }
@@ -50,7 +50,7 @@ Stop-Process -Id $LegacyProcessId -ErrorAction Stop
 Start-Service -Name $ServiceName -ErrorAction Stop
 Start-Sleep -Seconds 2
 $newHealth = Get-HubHealth $ProductionPort
-if (-not $newHealth -or $newHealth.service -ne "skill-web-hub") {
+if (-not $newHealth -or $newHealth.service -ne "open-skill-hub") {
   throw "The Node Hub did not become healthy on port $ProductionPort. The legacy process was not deleted; restore it using its recorded start command."
 }
 Write-Output "Cutover complete. Node Hub is healthy on port $ProductionPort at $($newHealth.time)."

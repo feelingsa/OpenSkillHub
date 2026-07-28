@@ -1,13 +1,53 @@
-node_modules/
-.npm-cache/
-dist/
-coverage/
-.env
-.env.*
-!.env.example
-data/*.db
-data/*.db-*
-runtime/
-frontend/generated/.cache/
-frontend/generated/*
-!frontend/generated/.gitkeep
+# Dependencies, builds, test output, and local caches
+/node_modules/
+/.npm-cache/
+/dist/
+/coverage/
+/.cache/
+/tmp/
+*.tsbuildinfo
+
+# Local environment configuration. Commit only the reviewed template.
+/.env
+/.env.*
+/*.env
+!/.env.example
+
+# Runtime state, databases, generated pages, uploads, and backups
+/data/
+!/data/.gitkeep
+/runtime/
+/frontend/generated/*
+!/frontend/generated/.gitkeep
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# Logs may contain requests, paths, model output, and diagnostics.
+*.log
+/logs/
+
+# Private keys, certificates, credential stores, and exported secrets
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+*.kdbx
+*.token
+*.secret
+/secrets/
+
+# Local editor and operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo

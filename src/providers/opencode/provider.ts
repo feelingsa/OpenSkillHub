@@ -32,6 +32,18 @@ export interface OpenCodeRunHandle {
   close(): void;
 }
 
+function extractAssistantText(response: unknown): string {
+  if (!response || typeof response !== "object") return "";
+  const parts = (response as { parts?: unknown }).parts;
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .flatMap((part) => part && typeof part === "object" && (part as { type?: unknown }).type === "text" && typeof (part as { text?: unknown }).text === "string"
+      ? [(part as { text: string }).text]
+      : [])
+    .join("\n")
+    .trim();
+}
+
 export class OpenCodeProvider {
   private child?: ChildProcessWithoutNullStreams;
   private ownsLock = false;
@@ -161,15 +173,42 @@ export class OpenCodeProvider {
     const health = await this.checkHealth();
     if (health.status !== "healthy") throw new Error("OpenCode is offline");
     const model = this.config.model;
+    // OpenCode 1.14 requires an explicit agent when invoking the session API.
+    // Without it, session/message returns an opaque HTTP 500 even though the
+    // server health check and model configuration are valid.
+    const agent = "build";
     const session = await this.requestJson<{ id?: unknown }>("session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: options.title, ...(model ? { model } : {}) }),
+      body: JSON.stringify({ title: options.title, agent, ...(model ? { model } : {}) }),
     });
     if (!session || typeof session.id !== "string") throw new Error("OpenCode did not create a valid session");
-    const sessionId = session.id;
+    return this.sendSessionMessage(session.id, options);
+  }
+
+  async continueRun(options: { sessionId: string; prompt: string; directory: string; onEvent: (event: OpenCodeServerEvent) => void }): Promise<OpenCodeRunHandle> {
+    const health = await this.checkHealth();
+    if (health.status !== "healthy") throw new Error("OpenCode is offline");
+    return this.sendSessionMessage(options.sessionId, options);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    try {
+      await this.requestJson(`session/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    } catch (error) {
+      // A deleted or unavailable upstream session must not retain the Hub record.
+      if (!(error instanceof Error) || !error.message.includes("HTTP 404")) throw error;
+    }
+  }
+
+  private async sendSessionMessage(sessionId: string, options: { prompt: string; directory: string; onEvent: (event: OpenCodeServerEvent) => void }): Promise<OpenCodeRunHandle> {
+    const model = this.config.model;
+    const agent = "build";
+    let receivedTextDelta = false;
     const subscription = await this.subscribe((event) => {
-      if (event.properties && event.properties.sessionID === sessionId) options.onEvent(event);
+      if (!event.properties || event.properties.sessionID !== sessionId) return;
+      if (event.type === "session.next.text.delta" && typeof event.properties.delta === "string") receivedTextDelta = true;
+      options.onEvent(event);
     });
     const endpoint = `session/${encodeURIComponent(sessionId)}/message`;
     const url = new URL(endpoint, this.config.url);
@@ -180,13 +219,23 @@ export class OpenCodeProvider {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           parts: [{ type: "text", text: options.prompt }],
+          agent,
           ...(model ? { model: { providerID: model.providerID, modelID: model.id }, ...(model.variant ? { variant: model.variant } : {}) } : {}),
         }),
         signal: promptController.signal,
       })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`OpenCode message request returned HTTP ${response.status}`);
-        await response.arrayBuffer();
+        if (!response.ok) {
+          const detail = (await response.text()).trim().replace(/\s+/g, " ").slice(0, 1000);
+          throw new Error(`OpenCode message request returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+        }
+        const completedResponse: unknown = await response.json().catch(() => undefined);
+        // Some OpenCode releases do not emit text deltas on the shared event
+        // stream. Preserve the final assistant text from the message response.
+        if (!receivedTextDelta) {
+          const text = extractAssistantText(completedResponse);
+          if (text) options.onEvent({ type: "session.next.text.delta", properties: { sessionID: sessionId, delta: text } });
+        }
         // The message endpoint completes only after the assistant has stopped. Some
         // OpenCode versions omit session.idle from the shared SSE subscription.
         options.onEvent({ type: "session.idle", properties: { sessionID: sessionId } });

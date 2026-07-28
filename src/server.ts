@@ -49,11 +49,17 @@ export async function buildServer(config: HubConfig = loadConfig(defaultProjectR
     }
   };
 
-  app.addHook("onSend", async (_request, reply) => {
+  app.addHook("onSend", async (request, reply) => {
+    const isSandboxAsset = request.url.startsWith("/generated/") || request.url.startsWith("/runtime/");
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "SAMEORIGIN");
     reply.header("Referrer-Policy", "same-origin");
-    reply.header("Cross-Origin-Resource-Policy", "same-origin");
+    // Generated pages run in an opaque-origin sandbox. Their own stylesheet and
+    // runtime must be embeddable by that sandbox, while the rest stays same-origin.
+    reply.header("Cross-Origin-Resource-Policy", isSandboxAsset ? "cross-origin" : "same-origin");
+    // The shared runtime is an ES module. A sandboxed iframe has an opaque (null)
+    // origin, so module loading also requires an explicit CORS response.
+    if (isSandboxAsset) reply.header("Access-Control-Allow-Origin", "*");
     if (!reply.getHeader("content-security-policy")) reply.header("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self';");
     reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   });

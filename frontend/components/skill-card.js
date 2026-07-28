@@ -2,6 +2,7 @@ const tones = [
   ["#8b5cff", "#27d7f5"], ["#32f5a6", "#27d7f5"], ["#ffb84d", "#ff5e70"],
   ["#27d7f5", "#8b5cff"], ["#ff5e70", "#ffb84d"], ["#32f5a6", "#8b5cff"],
 ];
+import { t } from "../i18n.js";
 
 export function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
@@ -12,7 +13,7 @@ export function compactDescription(description) {
 }
 
 export function pageStateLabel(pageStatus) {
-  return { ready: "PAGE READY", queued: "PAGE QUEUED", generating: "GENERATING", failed: "PAGE FAILED", stale: "PAGE STALE", missing: "PAGE MISSING" }[pageStatus] || "PAGE MISSING";
+  return t({ ready: "PAGE READY", queued: "PAGE QUEUED", generating: "GENERATING", failed: "PAGE FAILED", stale: "PAGE STALE", missing: "PAGE MISSING" }[pageStatus] || "PAGE MISSING");
 }
 
 export function toneFor(skillId) {
@@ -26,7 +27,7 @@ function initials(value) {
 
 export function renderSkillCard(skill, index, opencodeAvailable) {
   const [accent, secondary] = toneFor(skill.id);
-  const runState = opencodeAvailable ? "RUN AVAILABLE" : "OPENCODE OFFLINE";
+  const runState = opencodeAvailable ? t("RUN AVAILABLE") : t("OPENCODE OFFLINE");
   return `
     <article class="skill-window" data-card="${index}" data-skill="${escapeHtml(skill.id)}" tabindex="-1" style="--card-accent:${accent}; --card-secondary:${secondary}">
       <header class="window-bar"><div class="window-controls" aria-label="window controls"><span class="control minimize" title="minimize"></span><span class="control collapse" title="collapse"></span><span class="control close" title="close"></span></div><div class="bar-title">${escapeHtml(skill.displayName)}</div><span class="window-tag tag-${skill.pageStatus === "ready" ? "green" : "violet"}">${escapeHtml(pageStateLabel(skill.pageStatus))}</span></header>

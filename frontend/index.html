@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SKILL WEB HUB</title>
+    <title>OPENSKILLHUB</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="hub-shell">
       <aside class="catalog-rail">
-        <a class="catalog-brand" href="/">SKILL WEB HUB</a>
+        <a class="catalog-brand" href="/">OPENSKILLHUB</a>
         <nav class="catalog-nav" aria-label="Workspace">
           <span>WORKSPACE</span>
           <a href="/" class="is-current">发现 Skill</a>
@@ -25,14 +25,14 @@
         <div id="userSessionActions" class="user-session-actions" hidden><span id="userSessionName"></span><a id="adminConsoleLink" href="/admin" hidden>管理控制台</a><button id="userLogoutButton" type="button">退出</button></div>
       </aside>
       <section class="catalog-main">
-        <header class="catalog-header"><div><p class="kicker">SKILL WEB HUB</p><h1>发现 Skill</h1><p>浏览已发布的 Skill，选择后进入可视化运行页面</p></div><span class="catalog-network">LOCAL NETWORK</span></header>
+        <header class="catalog-header"><div><p class="kicker">OPENSKILLHUB</p><h1>发现 Skill</h1><p>浏览已发布的 Skill，选择后进入可视化运行页面</p></div><span class="catalog-network">LOCAL NETWORK</span></header>
         <section class="preview-stage" aria-label="OpenCode skills preview"><div id="skillDeck" class="skill-deck" tabindex="0" aria-label="Mouse wheel switches skill windows"></div></section>
       </section>
 
       <div id="skillModal" class="skill-modal" aria-hidden="true">
         <article class="skill-modal-window" role="dialog" aria-modal="true" aria-labelledby="skillModalTitle">
-          <div id="skillModalHero" class="skill-modal-hero"></div>
-          <section class="skill-modal-body"><h2 id="skillModalTitle"></h2><div id="skillModalContent" class="skill-modal-content"></div><footer class="skill-modal-actions"><button id="skillStartButton" class="skill-start-button" type="button">开始运行</button></footer></section>
+          <div id="skillModalHero" class="skill-modal-hero"><h2 id="skillModalTitle"></h2></div>
+          <section class="skill-modal-body"><div id="skillModalContent" class="skill-modal-content"></div><footer class="skill-modal-actions"><button id="skillStartButton" class="skill-start-button" type="button">开始运行</button></footer></section>
         </article>
       </div>
     </main>

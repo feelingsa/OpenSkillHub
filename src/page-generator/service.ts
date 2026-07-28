@@ -14,18 +14,25 @@ const defaultPromptVersion = "skill-page-contract-v2";
 const maximumGeneratedFileBytes = 250 * 1024;
 const outputFiles = ["index.html", "styles.css", "view.manifest.json"] as const;
 const optionalOutputFiles = ["view.js"] as const;
-const generatedThemeMarker = "/* skill-web-hub-generated-theme-v2 */";
+const generatedThemeMarker = "/* skill-web-hub-generated-theme-v3 */";
+const generatedControlsMarker = "/* skill-web-hub-generated-controls-v5 */";
 const generatedThemeCss = `${generatedThemeMarker}
 :root {
   color-scheme: dark;
   --hub-color-canvas: #050608;
-  --hub-color-surface: #090b10;
-  --hub-color-surface-raised: #141821;
-  --hub-color-border: #2a3140;
+  --hub-color-background: #050608;
+  --hub-color-surface: #111722;
+  --hub-color-surface-raised: #192231;
+  --hub-color-input: #1a2433;
+  --hub-color-border: #45516a;
   --hub-color-text-primary: #f5f7fb;
+  --hub-color-text: #f5f7fb;
   --hub-color-text-secondary: #a6b0c1;
   --hub-color-text-muted: #697386;
   --hub-color-info: #27d7f5;
+  --hub-color-primary: #27d7f5;
+  --hub-color-primary-foreground: #051116;
+  --hub-color-primary-contrast: #051116;
   --hub-color-success: #32f5a6;
   --hub-color-warning: #ffb84d;
   --hub-color-danger: #ff5e70;
@@ -33,6 +40,8 @@ const generatedThemeCss = `${generatedThemeMarker}
   --hub-font-mono: Consolas, "SFMono-Regular", monospace;
   --hub-radius-sm: 4px;
   --hub-radius-md: 6px;
+  --hub-radius-lg: 10px;
+  --hub-shadow-sm: 0 8px 20px rgb(0 0 0 / 22%);
   --hub-shadow-raised: 0 18px 48px rgb(0 0 0 / 32%);
 }
 
@@ -43,6 +52,53 @@ button { border: 1px solid var(--hub-color-info) !important; border-radius: var(
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 a { color: var(--hub-color-info) !important; }
 [data-run-status], [data-run-events], [data-run-interaction], [data-run-artifacts] { color: var(--hub-color-text-secondary); }
+`;
+const generatedControlsCss = `${generatedControlsMarker}
+/* This block intentionally follows the generated CSS so controls always remain visible. */
+:root {
+  color-scheme: dark !important;
+  --hub-color-background: #050608;
+  --hub-color-surface: #111722;
+  --hub-color-surface-raised: #192231;
+  --hub-color-input: #1a2433;
+  --hub-color-border: #45516a;
+  --hub-color-text: #f5f7fb;
+  --hub-color-primary: #27d7f5;
+  --hub-color-primary-foreground: #051116;
+  --hub-color-primary-contrast: #051116;
+  --hub-radius-lg: 10px;
+  --hub-shadow-sm: 0 8px 20px rgb(0 0 0 / 22%);
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background-color: var(--hub-color-input) !important;
+  color: var(--hub-color-text-primary) !important;
+  border: 1px solid var(--hub-color-border) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 0 0 1px rgb(0 0 0 / 16%) !important;
+}
+
+input::placeholder,
+textarea::placeholder { color: #9aa8c0 !important; opacity: 1; }
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible { outline: 2px solid var(--hub-color-info) !important; outline-offset: 2px; }
+select option { background: var(--hub-color-surface-raised); color: var(--hub-color-text-primary); }
+[data-run-result] {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--hub-color-border);
+  border-radius: var(--hub-radius-md);
+  background: var(--hub-color-surface-raised);
+}
+[data-run-result] h3 { margin: 0 0 10px; color: var(--hub-color-text-primary); font-size: 0.84rem; }
+[data-run-result-content] { margin: 0; color: var(--hub-color-text-primary); font: 0.88rem/1.65 var(--hub-font-sans); white-space: pre-wrap; word-break: break-word; }
+[data-run-followup] { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hub-color-border); }
+[data-run-followup] h3 { margin: 0 0 10px; color: var(--hub-color-text-primary); font-size: 0.84rem; }
+[data-run-followup-form] { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+[data-run-followup-form] textarea { min-height: 76px; resize: vertical; padding: 10px 12px; }
+[data-run-followup-form] button { min-height: 42px; padding: 0 16px; }
 `;
 
 const viewManifestSchema = z.object({
@@ -124,7 +180,8 @@ function assertGeneratedCssIsSafe(css: string): void {
 }
 
 export function applyGeneratedTheme(css: string): string {
-  return css.includes(generatedThemeMarker) ? css : `${generatedThemeCss}\n${css}`;
+  const themed = css.includes(generatedThemeMarker) ? css : `${generatedThemeCss}\n${css}`;
+  return themed.includes(generatedControlsMarker) ? themed : `${themed}\n${generatedControlsCss}`;
 }
 
 function validateViewManifest(manifest: SkillManifest, preset: GeneratedPagePreset, raw: string): GeneratedPageRecord["viewManifest"] {

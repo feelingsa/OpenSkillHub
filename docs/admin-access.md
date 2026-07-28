@@ -1,4 +1,4 @@
-# 管理员访问
+# OpenSkillHub 管理员访问
 
 管理页面位于 `/admin`。所有 `/api/admin/*` 接口都要求服务端会话认证；前端导航隐藏不是安全边界。
 
@@ -7,12 +7,12 @@
 在 `node/.env` 中设置以下值后重启 Hub：
 
 ```dotenv
-HUB_ADMIN_USERNAME=admin
-HUB_ADMIN_PASSWORD=use-a-unique-password-with-at-least-12-characters
+HUB_ADMIN_USERNAME=<管理员用户名>
+HUB_ADMIN_PASSWORD=<至少 12 位的唯一强密码>
 HUB_SESSION_TTL_MS=86400000
 ```
 
-会话令牌为随机值，浏览器只收到 HttpOnly、SameSite=Lax cookie；数据库只保存令牌的 SHA-256 哈希。部署到局域网前必须替换默认密码 `change-me-before-lan-use`。通过 HTTPS 反向代理发布时设置 `HUB_COOKIE_SECURE=true`，让浏览器只在 HTTPS 请求中携带会话 cookie。
+会话令牌为随机值，浏览器只收到 HttpOnly、SameSite=Lax cookie；数据库只保存令牌的 SHA-256 哈希。部署到局域网前必须设置唯一的强密码。通过 HTTPS 反向代理发布时设置 `HUB_COOKIE_SECURE=true`，让浏览器只在 HTTPS 请求中携带会话 cookie。
 
 ## 当前范围
 

@@ -1,4 +1,4 @@
-# M2 Desktop Visual Acceptance
+# M2 OpenSkillHub Desktop Visual Acceptance
 
 ## Evidence
 
@@ -16,7 +16,7 @@ The capture runs the current Node service in local Microsoft Edge at exactly `14
 
 ## Compared Shell
 
-The user SVG's embedded desktop reference establishes the dark grid canvas, compact provider label, large `SKILL WEB HUB` title, centered perspective stack, and a single full-width focus card. The current desktop capture preserves these shell signals and uses the extracted design color tokens. The card deck, hover lift, wheel/keyboard stack movement, modal interaction, and reduced-motion behavior remain code-owned rather than being rasterized from the design source.
+The user SVG's embedded desktop reference establishes the dark grid canvas, compact provider label, prominent product title, centered perspective stack, and a single full-width focus card. The current OpenSkillHub capture preserves these shell signals and uses the extracted design color tokens. The card deck, hover lift, wheel/keyboard stack movement, modal interaction, and reduced-motion behavior remain code-owned rather than being rasterized from the design source.
 
 ## Registered Differences
 

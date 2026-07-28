@@ -24,7 +24,7 @@ describe("legacy service retirement", () => {
     try {
       const health = await app.inject({ method: "GET", url: "/api/health" });
       expect(health.statusCode).toBe(200);
-      expect(health.json()).toMatchObject({ service: "skill-web-hub" });
+      expect(health.json()).toMatchObject({ service: "open-skill-hub" });
       for (const request of [
         { method: "GET" as const, url: "/oc/session" },
         { method: "GET" as const, url: "/download?path=C:%5CWindows%5Cwin.ini" },

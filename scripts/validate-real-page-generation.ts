@@ -9,9 +9,12 @@ import type { SkillManifest } from "../src/types.js";
 
 const root = await mkdtemp(path.join(tmpdir(), "skill-web-hub-real-page-"));
 const endpoint = process.env.OPENCODE_URL ?? "http://127.0.0.1:4197";
-const providerID = process.env.OPENCODE_MODEL_PROVIDER ?? "xingwan";
-const modelID = process.env.OPENCODE_MODEL_ID ?? "gpt-5.6-terra";
-const variant = process.env.OPENCODE_MODEL_VARIANT ?? "medium";
+const providerID = process.env.OPENCODE_MODEL_PROVIDER;
+const modelID = process.env.OPENCODE_MODEL_ID;
+const variant = process.env.OPENCODE_MODEL_VARIANT;
+if (Boolean(providerID) !== Boolean(modelID)) {
+  throw new Error("Set both OPENCODE_MODEL_PROVIDER and OPENCODE_MODEL_ID, or leave both unset to use OpenCode's default model.");
+}
 const config: HubConfig = {
   projectRoot: root,
   host: "127.0.0.1",
@@ -33,7 +36,7 @@ const config: HubConfig = {
     logFilePath: path.join(root, "opencode.log"),
     startTimeoutMs: 15_000,
     skillRoots: [],
-    model: { providerID, id: modelID, variant },
+    model: providerID && modelID ? { providerID, id: modelID, ...(variant ? { variant } : {}) } : undefined,
   },
 };
 const skill: SkillManifest = {
