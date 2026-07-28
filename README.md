@@ -374,3 +374,7 @@ Invoke-RestMethod http://127.0.0.1:5180/api/health
 - [Windows 服务部署](docs/windows-service.md)
 - [备份与恢复](docs/backup-recovery.md)
 - [旧服务迁移说明](docs/migration-m7.md)
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE) 发布。详情见仓库根目录的 `LICENSE` 文件。
